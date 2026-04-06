@@ -365,7 +365,7 @@ class MainQtWindow(QMainWindow):
                 self._global_search.clear()
                 return
         ps = ProductService()
-        row = ps.get_product_by_code(q)
+        row = ps.get_product_by_code(q) or ps.get_product_by_barcode(q)
         if row and row.get("is_active"):
             self.add_product_to_sales_cart(int(row["id"]), 1.0)
             self._global_search.clear()

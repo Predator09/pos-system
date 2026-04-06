@@ -34,10 +34,12 @@ def format_receipt_plaintext(
         [
             f"Invoice: {sale.get('invoice_number', '')}",
             f"Date: {sale.get('sale_date', '')}",
-            "",
-            "Items:",
         ]
     )
+    staff = (sale.get("cashier_name") or "").strip()
+    if staff:
+        lines.append(f"Served by: {staff}")
+    lines.extend(["", "Items:"])
     for it in sale.get("items") or []:
         nm = (it.get("name") or "").strip() or "Item"
         cd = (it.get("code") or "").strip()

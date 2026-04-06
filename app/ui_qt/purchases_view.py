@@ -25,6 +25,7 @@ from app.services.product_service import ProductService
 from app.services.purchase_service import PurchaseService
 from app.services.supplier_service import SupplierService
 
+from app.ui.helpers import format_purchase_timestamp
 from app.ui_qt.dialogs_qt import PickProductDialogQt
 from app.ui_qt.helpers_qt import format_money, info_message, warning_message
 from app.ui_qt.supplier_editor_qt import SupplierEditorDialogQt
@@ -187,9 +188,10 @@ class PurchasesView(QWidget):
         root.addWidget(QLabel("Recent purchases"))
         self._hist_table = QTableWidget(0, len(_HIST_COLS))
         self._hist_table.setHorizontalHeaderLabels(
-            ["Reference", "Received", "Supplier", "Phone", "Email", "Lines", "Value"]
+            ["Reference", "Date & time", "Supplier", "Phone", "Email", "Lines", "Value"]
         )
         self._hist_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._hist_table.setColumnWidth(1, 168)
         root.addWidget(self._hist_table, 1)
 
     def _on_supplier_field_edited(self, *_args) -> None:
@@ -468,7 +470,7 @@ class PurchasesView(QWidget):
             self._hist_table.insertRow(i)
             vals = (
                 r.get("reference") or "",
-                str(r.get("received_at") or "")[:19],
+                format_purchase_timestamp(r.get("received_at") or r.get("created_at")),
                 (r.get("supplier_name") or "")[:40],
                 (r.get("supplier_phone") or "")[:32],
                 (r.get("supplier_email") or "")[:40],

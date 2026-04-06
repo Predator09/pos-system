@@ -4,6 +4,21 @@ from app.database.connection import db
 from app.database.sync import SyncOperation, SyncTracker
 
 
+def _local_sale_timestamp() -> str:
+    """Wall-clock time on this PC, for ``sales.sale_date`` (local business midnight = new day)."""
+    return datetime.now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def cashier_display_name(user: dict | None) -> str:
+    """Label for receipts: full name if set, else username."""
+    if not user:
+        return ""
+    fn = (user.get("full_name") or "").strip()
+    if fn:
+        return fn
+    return (user.get("username") or "").strip()
+
+
 class SalesService:
     def __init__(self):
         self.sync = SyncTracker(db)
@@ -23,7 +38,12 @@ class SalesService:
         }
 
     def record_sale(self, cart_items: list, payment_info: dict) -> dict:
-        """Record sale to local database (completely offline)."""
+        """Record sale to local database (completely offline).
+
+        Each sale is stamped with the PC's **local** date and time so a new calendar day
+        starts at local midnight: reports, \"today\" totals, and daily invoice numbering
+        all follow that day boundary. Earlier sales stay in the database unchanged.
+        """
 
         # Calculate totals
         totals = self.calculate_cart_total(cart_items)
@@ -31,20 +51,29 @@ class SalesService:
         # Generate invoice number (local)
         invoice = self._generate_invoice_number()
 
+        sale_at = _local_sale_timestamp()
+
         # Insert sale
+        cashier = (payment_info.get("cashier_name") or "").strip() or None
+
         cursor = db.execute(
             """
-            INSERT INTO sales (invoice_number, subtotal, discount_amount, tax_amount, total_amount, payment_method, customer_name)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO sales (
+                invoice_number, sale_date, subtotal, discount_amount, tax_amount,
+                total_amount, payment_method, customer_name, cashier_name
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 invoice,
+                sale_at,
                 totals["subtotal"],
                 totals["discount_amount"],
                 totals["tax_amount"],
                 totals["total"],
                 payment_info.get("method", "CASH"),
                 payment_info.get("customer_name", ""),
+                cashier,
             ),
         )
 
@@ -162,15 +191,35 @@ class SalesService:
             cur += timedelta(days=1)
         return out
 
+    def hourly_gross_by_date(self, day_iso: str) -> list[tuple[str, float]]:
+        """24 buckets (00–23) for one calendar day; keys ``YYYY-MM-DDTHH`` for chart labels."""
+        day = day_iso[:10]
+        rows = db.fetchall(
+            """
+            SELECT strftime('%H', sale_date) AS h,
+                   COALESCE(SUM(total_amount), 0) AS g
+            FROM sales
+            WHERE DATE(sale_date) = ?
+            GROUP BY strftime('%H', sale_date)
+            """,
+            (day,),
+        )
+        by_h = {int(str(r["h"])): float(r["g"] or 0) for r in rows if r["h"] is not None}
+        return [(f"{day}T{h:02d}", by_h.get(h, 0.0)) for h in range(24)]
+
     def chart_series_for_overview(self, start_date: str, end_date: str) -> tuple[list[tuple[str, float]], str]:
         """
-        Points for the dashboard bar chart: daily buckets if range ≤ 45 days,
-        else one bar per calendar month in the range (zero-filled).
+        Points for the dashboard bar chart:
+        - single calendar day → hourly buckets;
+        - 2–45 days → daily gross per day;
+        - longer ranges → one bar per calendar month (zero-filled).
         """
         sd = date.fromisoformat(start_date[:10])
         ed = date.fromisoformat(end_date[:10])
         n = (ed - sd).days + 1
         s, e = start_date[:10], end_date[:10]
+        if n == 1:
+            return self.hourly_gross_by_date(s), "Hourly gross"
         if n <= 45:
             return self.daily_gross_by_date(s, e), "Daily gross"
         rows = db.fetchall(
@@ -234,8 +283,17 @@ class SalesService:
         return [dict(row) for row in results]
 
     def _generate_invoice_number(self) -> str:
-        """Generate invoice number locally."""
-        result = db.fetchone("SELECT MAX(id) FROM sales")
-        next_id = (result[0] or 0) + 1
-        today = datetime.now().strftime("%Y%m%d")
-        return f"INV{today}{next_id:05d}"
+        """Next invoice for **today (local date)** — sequence resets each calendar day at local midnight.
+
+        Format ``INV-YYYY-MM-DD-NNNNN`` (older rows may use ``INVYYYYMMDD…`` from the global-id scheme).
+        """
+        today = date.today().isoformat()
+        row = db.fetchone(
+            """
+            SELECT COUNT(*) AS n FROM sales
+            WHERE DATE(sale_date) = ?
+            """,
+            (today,),
+        )
+        n = int(row[0] or 0) + 1
+        return f"INV-{today}-{n:05d}"

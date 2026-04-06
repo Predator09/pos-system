@@ -26,20 +26,28 @@ from PySide6.QtWidgets import (
 
 from app.services.app_settings import AppSettings
 from app.services.product_service import ProductService
-from app.ui.theme_tokens import (
-    PRODUCT_STATUS_EXPIRED_QT_BG,
-    PRODUCT_STATUS_EXPIRED_QT_FG,
-    PRODUCT_STATUS_INACTIVE_QT_BG,
-    PRODUCT_STATUS_INACTIVE_QT_FG,
-    product_active_row_surface,
-)
+from app.ui.theme_tokens import product_active_row_surface
 
 from app.ui_qt.helpers_qt import ask_yes_no, format_money, info_message, warning_message
 
-_TREE_COLS = ("id", "name", "category", "price", "stock", "cost", "live", "status", "expiry")
+_TREE_COLS = ("id", "name", "sku", "barcode", "category", "price", "stock", "cost", "live", "status", "expiry")
+_TABLE_HEADERS = (
+    "ID",
+    "Name",
+    "SKU",
+    "Barcode",
+    "Category",
+    "Price",
+    "Stock",
+    "Cost",
+    "Live value",
+    "Status",
+    "Expiry",
+)
 _CSV_FIELDS = [
     "id",
     "code",
+    "barcode",
     "name",
     "category",
     "cost_price",
@@ -71,7 +79,7 @@ class ProductEditorDialogQt(QDialog):
         self.product_id = product_id
         self.saved = False
         self.setWindowTitle("Product" if product_id else "New product")
-        self.resize(520, 560)
+        self.resize(520, 600)
 
         outer = QVBoxLayout(self)
         f = QFormLayout()
@@ -80,6 +88,7 @@ class ProductEditorDialogQt(QDialog):
         self._category.setEditable(True)
         self._category.addItems([""] + categories)
         self._code = QLineEdit()
+        self._barcode = QLineEdit()
         self._price = QLineEdit("0")
         self._cost = QLineEdit("0")
         self._stock = QLineEdit("0")
@@ -99,7 +108,8 @@ class ProductEditorDialogQt(QDialog):
 
         f.addRow("Name", self._name)
         f.addRow("Category", self._category)
-        f.addRow("SKU / Code", self._code)
+        f.addRow("SKU", self._code)
+        f.addRow("Barcode (optional)", self._barcode)
         f.addRow("Selling price (GMD)", self._price)
         f.addRow("Cost (GMD)", self._cost)
         f.addRow("Stock qty", self._stock)
@@ -120,6 +130,7 @@ class ProductEditorDialogQt(QDialog):
                 else:
                     self._category.setCurrentText(cat)
                 self._code.setText(p.get("code") or "")
+                self._barcode.setText((p.get("barcode") or "") or "")
                 self._price.setText(str(p.get("selling_price") or 0))
                 self._cost.setText(str(p.get("cost_price") or 0))
                 self._stock.setText(str(p.get("quantity_in_stock") or 0))
@@ -128,7 +139,9 @@ class ProductEditorDialogQt(QDialog):
                 self._expiry.setText((p.get("expiry_date") or "") or "")
                 self._image.setText((p.get("image_path") or "") or "")
                 self._desc.setText(p.get("description") or "")
-            outer.addWidget(QLabel("Code is unique; changing SKU may break links."))
+            outer.addWidget(
+                QLabel("SKU is your internal code. Barcode is for scanning (unique when set).")
+            )
 
         outer.addLayout(f)
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -159,9 +172,16 @@ class ProductEditorDialogQt(QDialog):
     def _save(self) -> None:
         name = self._name.text().strip()
         code = self._code.text().strip()
+        bc_raw = self._barcode.text().strip()
+        bc = bc_raw if bc_raw else None
         if not name or not code:
             warning_message(self, "Product", "Name and SKU are required.")
             return
+        if bc:
+            holder = self.service.get_product_by_barcode(bc)
+            if holder and (not self.product_id or int(holder["id"]) != int(self.product_id)):
+                warning_message(self, "Product", "That barcode is already used on another product.")
+                return
         try:
             price = self._parse_float(self._price.text(), "Price")
             cost = self._parse_float(self._cost.text(), "Cost")
@@ -184,6 +204,7 @@ class ProductEditorDialogQt(QDialog):
                     self.product_id,
                     name=name,
                     code=code,
+                    barcode=bc,
                     category=cat,
                     description=desc,
                     cost_price=cost,
@@ -210,6 +231,7 @@ class ProductEditorDialogQt(QDialog):
                     is_active=bool(is_active),
                     expiry_date=exp or None,
                     image_path=img,
+                    barcode=bc,
                 )
         except Exception as e:
             warning_message(self, "Product", f"Save failed: {e}")
@@ -230,7 +252,7 @@ class ProductsView(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         head = QHBoxLayout()
-        ph = QLabel("Insert new · F2 edit · Del deactivate · selection for bulk")
+        ph = QLabel("Del deactivate · selection for bulk")
         ph.setObjectName("muted")
         head.addWidget(ph, 1)
         hb = QHBoxLayout()
@@ -319,7 +341,7 @@ class ProductsView(QWidget):
         root.addWidget(self._bulk_frame)
 
         self._table = QTableWidget(0, len(_TREE_COLS))
-        self._table.setHorizontalHeaderLabels(list(_TREE_COLS))
+        self._table.setHorizontalHeaderLabels(list(_TABLE_HEADERS))
         self._table.setSelectionBehavior(QTableWidget.SelectRows)
         self._table.setSelectionMode(QTableWidget.ExtendedSelection)
         self._table.setAlternatingRowColors(True)
@@ -328,7 +350,7 @@ class ProductsView(QWidget):
         root.addWidget(self._table, 1)
 
         keys = QHBoxLayout()
-        keys.addWidget(QLabel("Keys: Insert=new, F2=edit, Del=deactivate"))
+        keys.addWidget(QLabel("Keys: Del=deactivate"))
         root.addLayout(keys)
 
         self._table.installEventFilter(self)
@@ -365,7 +387,8 @@ class ProductsView(QWidget):
 
     def _passes_filters(self, p: dict) -> bool:
         q = self._search.text().strip().lower()
-        if q and q not in (p.get("name") or "").lower() and q not in (p.get("code") or "").lower():
+        bc = (p.get("barcode") or "").lower()
+        if q and q not in (p.get("name") or "").lower() and q not in (p.get("code") or "").lower() and q not in bc:
             return False
         cat = self._cat.currentText()
         if cat and cat != "(all)":
@@ -398,14 +421,6 @@ class ProductsView(QWidget):
                     return False
         return True
 
-    def _status_label(self, p: dict) -> str:
-        st = ProductService.row_status(p)
-        if st == "active":
-            return "Active"
-        if st == "inactive":
-            return "Inactive"
-        return "Expired"
-
     def _apply_filters(self) -> None:
         self._table.setRowCount(0)
         for p in self._all_products:
@@ -421,12 +436,14 @@ class ProductsView(QWidget):
             vals = (
                 str(pid),
                 p.get("name") or "",
+                p.get("code") or "—",
+                (p.get("barcode") or "") or "—",
                 p.get("category") or "—",
                 format_money(price),
                 f"{qty:g}" if qty == int(qty) else f"{qty:.2f}",
                 format_money(float(p.get("cost_price") or 0)),
                 format_money(live),
-                self._status_label(p),
+                ProductService.inventory_status_display(p),
                 exp,
             )
             for c, val in enumerate(vals):
@@ -438,30 +455,32 @@ class ProductsView(QWidget):
         self._on_select()
 
     def _apply_product_row_status_style(self, row: int, p: dict) -> None:
-        tag = ProductService.inventory_row_tag(p)
-        if tag == "expired":
-            bg, fg = QColor(PRODUCT_STATUS_EXPIRED_QT_BG), QColor(PRODUCT_STATUS_EXPIRED_QT_FG)
-        elif tag == "inactive":
-            bg, fg = QColor(PRODUCT_STATUS_INACTIVE_QT_BG), QColor(PRODUCT_STATUS_INACTIVE_QT_FG)
-        elif tag == "active_ok":
-            bg_s, fg_s = product_active_row_surface(AppSettings().get_appearance())
-            bg, fg = QColor(bg_s), QColor(fg_s)
-        elif tag == "low":
-            bg, fg = QColor("#78350f"), QColor("#fde68a")
-        elif tag == "bad":
-            bg, fg = QColor("#5c1f1f"), QColor("#fde68a")
-        else:
-            return
+        appearance = AppSettings().get_appearance()
+        is_dark = (appearance or "").lower() == "dark"
+        bg_s, fg_s = product_active_row_surface(appearance)
+        row_bg, base_fg = QColor(bg_s), QColor(fg_s)
+        red_fg = QColor("#f87171") if is_dark else QColor("#b91c1c")
+        yellow_fg = QColor("#fbbf24") if is_dark else QColor("#b45309")
+
         font = QFont()
-        font.setBold(True)
         font.setPointSize(10)
+        status_col = _TREE_COLS.index("status")
         for c in range(self._table.columnCount()):
             it = self._table.item(row, c)
             if it is None:
                 continue
-            it.setBackground(bg)
-            it.setForeground(fg)
+            it.setBackground(row_bg)
+            it.setForeground(base_fg)
             it.setFont(font)
+
+        tag = ProductService.inventory_row_tag(p)
+        it_status = self._table.item(row, status_col)
+        if it_status is None:
+            return
+        if tag in ("expired", "bad"):
+            it_status.setForeground(red_fg)
+        elif tag in ("low", "inactive"):
+            it_status.setForeground(yellow_fg)
 
     def apply_theme_tokens(self) -> None:
         """Re-tint inventory rows when light/dark stylesheet changes."""
@@ -633,6 +652,7 @@ class ProductsView(QWidget):
                         {
                             "id": p.get("id"),
                             "code": p.get("code"),
+                            "barcode": p.get("barcode") or "",
                             "name": p.get("name"),
                             "category": p.get("category") or "",
                             "cost_price": p.get("cost_price"),

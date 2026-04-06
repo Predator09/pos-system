@@ -188,11 +188,8 @@ QLabel#miniKpiValue {{
     font-weight: 700;
     color: #f0f4f8;
 }}
-QFrame#chartPlaceholder {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #182436, stop:0.5 #131d2c, stop:1 #101820);
-    border: 1px solid #283849;
-    border-radius: 14px;
+QWidget#dashboardSalesChart {{
+    background-color: transparent;
 }}
 QLabel#chartPlaceholderTitle {{
     font-size: 14px;
@@ -677,11 +674,8 @@ QLabel#miniKpiValue {{
     font-weight: 700;
     color: #111827;
 }}
-QFrame#chartPlaceholder {{
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-        stop:0 #edf3f9, stop:0.5 #e4f0f7, stop:1 #ffffff);
-    border: 1px solid #d1dae6;
-    border-radius: 14px;
+QWidget#dashboardSalesChart {{
+    background-color: transparent;
 }}
 QLabel#chartPlaceholderTitle {{
     font-size: 14px;

@@ -1,26 +1,38 @@
 from __future__ import annotations
 
-import tkinter as tk
 from datetime import datetime
-from typing import Any, Mapping, Optional
-
-import customtkinter as ctk
-import ttkbootstrap as ttk
-from tkinter import messagebox
+from typing import Any, Mapping
 
 from app.config import CURRENCY_SYMBOL
 
 
-def create_button(parent, text, command=None, **kwargs):
-    return ctk.CTkButton(parent, text=text, command=command, **kwargs)
-
-
-def create_entry(parent, textvariable=None, **kwargs):
-    return ctk.CTkEntry(parent, textvariable=textvariable, **kwargs)
-
-
 def format_money(amount: float) -> str:
     return f"{CURRENCY_SYMBOL} {amount:,.2f}"
+
+
+def format_purchase_timestamp(value: Any) -> str:
+    """Format receipt / purchase time for lists: always date + time when parseable."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    s = str(value).strip()
+    if not s:
+        return ""
+    s = s.replace("T", " ", 1)
+    if s.endswith("Z"):
+        s = s[:-1].strip()
+    if "." in s:
+        i = s.index(".")
+        if i >= 10:
+            s = s[:i].strip()
+    if len(s) >= 19 and s[10] == " ":
+        return s[:19]
+    if len(s) == 16 and s[10] == " " and s.count(":") == 2:
+        return f"{s}:00"
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        return f"{s} 00:00:00"
+    return s
 
 
 def welcome_first_name(user: Mapping[str, Any] | None) -> str:
@@ -57,10 +69,3 @@ def home_welcome_detail_line(user: Mapping[str, Any] | None, shop_name: str) -> 
         f"{g}, {first}. Great to have you with us at {shop_name} today — "
         "your live stats are right here; use the sidebar for register, products, and more."
     )
-
-
-def show_message(message: str, title: str = "POS", parent: Optional[tk.Misc] = None):
-    if parent is not None:
-        messagebox.showinfo(title, message, parent=parent)
-    else:
-        messagebox.showinfo(title, message)

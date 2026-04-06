@@ -22,6 +22,27 @@ def format_sales_calendar_day(iso_day: str | None) -> str:
     return f"{d.strftime('%A')}, {d.day} {d.strftime('%B')} {d.year}"
 
 
+def format_report_period_title(start_iso: str, end_iso: str) -> str:
+    """Short heading for the reports header (single day vs range)."""
+    a = str(start_iso or "").strip()[:10]
+    b = str(end_iso or "").strip()[:10]
+    if len(a) != 10 or len(b) != 10:
+        return f"{start_iso} – {end_iso}".strip(" –") or "—"
+
+    def _short(d: date) -> str:
+        return f"{d.day} {d.strftime('%b')}"
+
+    if a == b:
+        return format_sales_calendar_day(a)
+    try:
+        da, db = date.fromisoformat(a), date.fromisoformat(b)
+    except ValueError:
+        return f"{a} – {b}"
+    if da.year == db.year:
+        return f"{_short(da)} – {_short(db)} {db.year}"
+    return f"{_short(da)} {da.year} – {_short(db)} {db.year}"
+
+
 class ReportsService:
     """SQL-backed reports; no mutations."""
 
@@ -139,7 +160,13 @@ class ReportsService:
         b = self._validate_iso(end_date)
         if a > b:
             raise ValueError("Start date must be on or before end date.")
-        lim = max(1, min(int(limit), 500))
+        try:
+            lim = int(limit)
+            if lim < 1 or lim > 500:
+                raise ValueError("Limit must be between 1 and 500.")
+        except (ValueError, TypeError):
+            raise ValueError("Limit must be a valid integer between 1 and 500.")
+        
         rows = db.fetchall(
             """
             SELECT p.id AS product_id, p.code, p.name,
@@ -167,7 +194,7 @@ class ReportsService:
         ]
 
     def inventory_valuation_snapshot(self) -> dict:
-        """On-hand units and retail value (selling_price × qty) for active lines."""
+        """On-hand units, retail and cost value, and profit (retail − cost) for active lines."""
         row = db.fetchone(
             """
             SELECT COUNT(*) AS skus,
@@ -179,7 +206,7 @@ class ReportsService:
             """
         )
         if not row:
-            return {"skus": 0, "units": 0.0, "retail_value": 0.0, "cost_value": 0.0, "margin_hint": 0.0}
+            return {"skus": 0, "units": 0.0, "retail_value": 0.0, "cost_value": 0.0, "profit": 0.0}
         retail = float(row["retail_value"] or 0)
         cost = float(row["cost_value"] or 0)
         return {
@@ -187,7 +214,7 @@ class ReportsService:
             "units": round(float(row["units"] or 0), 2),
             "retail_value": round(retail, 2),
             "cost_value": round(cost, 2),
-            "margin_hint": round(retail - cost, 2),
+            "profit": round(retail - cost, 2),
         }
 
     def purchase_receipts_in_range(self, start_date: str, end_date: str) -> list[dict]:
@@ -200,19 +227,19 @@ class ReportsService:
             rows = db.fetchall(
                 """
                 SELECT r.id, r.reference, r.supplier_name, r.supplier_phone, r.supplier_email,
-                       r.received_at,
+                       r.received_at, r.created_at,
                        (SELECT COUNT(*) FROM purchases p WHERE p.receipt_id = r.id) AS line_count,
                        (SELECT COALESCE(SUM(p.quantity * p.cost_price), 0)
                           FROM purchases p WHERE p.receipt_id = r.id) AS total_value
                 FROM purchase_receipts r
-                WHERE DATE(r.received_at) BETWEEN ? AND ?
-                ORDER BY r.received_at DESC, r.id DESC
+                WHERE DATE(COALESCE(r.received_at, r.created_at)) BETWEEN ? AND ?
+                ORDER BY COALESCE(r.received_at, r.created_at) DESC, r.id DESC
                 """,
                 (a, b),
             )
-        except sqlite3.OperationalError:
-            return []
-        return [dict(r) for r in rows]
+            return [dict(r) for r in rows]
+        except sqlite3.OperationalError as e:
+            raise sqlite3.OperationalError(f"Failed to retrieve purchase receipts: {e}") from e
 
     def list_sales_for_export(self, start_date: str, end_date: str) -> list[dict]:
         a = self._validate_iso(start_date)
@@ -222,7 +249,7 @@ class ReportsService:
         rows = db.fetchall(
             """
             SELECT id, invoice_number, sale_date, subtotal, discount_amount,
-                   total_amount, payment_method, customer_name
+                   total_amount, payment_method, customer_name, cashier_name
             FROM sales
             WHERE DATE(sale_date) BETWEEN ? AND ?
             ORDER BY sale_date DESC, id DESC
@@ -230,6 +257,41 @@ class ReportsService:
             (a, b),
         )
         return [dict(r) for r in rows]
+
+    def sales_receipts_grouped_by_day(self, start_date: str, end_date: str) -> list[dict]:
+        """Sales invoices in range, grouped by calendar day of ``sale_date`` (newest day first)."""
+        a = self._validate_iso(start_date)
+        b = self._validate_iso(end_date)
+        if a > b:
+            raise ValueError("Start date must be on or before end date.")
+        rows = db.fetchall(
+            """
+            SELECT id, invoice_number, sale_date, DATE(sale_date) AS issue_day,
+                   subtotal, discount_amount, total_amount, payment_method, customer_name, cashier_name
+            FROM sales
+            WHERE DATE(sale_date) BETWEEN ? AND ?
+            ORDER BY issue_day DESC, sale_date DESC, id DESC
+            """,
+            (a, b),
+        )
+        out: list[dict] = []
+        cur: str | None = None
+        bucket: list[dict] = []
+        for r in rows:
+            d = dict(r)
+            day = str(d.get("issue_day") or "").strip()[:10]
+            if len(day) != 10:
+                sd = d.get("sale_date")
+                day = str(sd or "")[:10] if sd else ""
+            if cur != day:
+                if bucket and cur is not None:
+                    out.append({"day": cur, "receipts": bucket})
+                cur = day
+                bucket = []
+            bucket.append(d)
+        if bucket and cur is not None:
+            out.append({"day": cur, "receipts": bucket})
+        return out
 
     def list_sale_lines_for_export(self, start_date: str, end_date: str) -> list[dict]:
         a = self._validate_iso(start_date)
@@ -273,6 +335,7 @@ class ReportsService:
             "total_amount",
             "payment_method",
             "customer_name",
+            "cashier_name",
         )
         return self.export_csv(path, headers, rows)
 

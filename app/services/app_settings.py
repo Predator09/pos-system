@@ -1,4 +1,4 @@
-"""Persist UI preferences (appearance + ttkbootstrap theme name)."""
+"""Persist UI preferences (appearance + saved theme name for Qt shell)."""
 
 from __future__ import annotations
 
@@ -68,13 +68,7 @@ class AppSettings:
 
 
 def resolve_startup_theme() -> str:
-    """ttkbootstrap theme for Window(themename=...) from saved appearance.
-
-    Must not call ``ttk.Style()`` here: that runs while resolving ``MainWindow(...)``
-    arguments, *before* ``Tk.__init__`` completes. On Python 3.14 that can create a
-    stray ``Tk`` and leave ``tkinter._default_root`` on the wrong interpreter, which
-    later breaks ``ImageTk.PhotoImage`` during ``theme_use``.
-    """
+    """Bootstrap theme name string from saved appearance (legacy helper; Qt uses ``get_appearance`` + QSS)."""
     chosen = theme_for_appearance(AppSettings().get_appearance())
     if chosen in (THEME_DARK, THEME_LIGHT):
         return chosen

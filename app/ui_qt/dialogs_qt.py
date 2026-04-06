@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from app.services.receipt_output import archive_receipt_file, format_receipt_plaintext, print_receipt
 from app.services.shop_settings import ShopSettings
-from app.ui_qt.helpers_qt import format_money, info_message
+from app.ui_qt.helpers_qt import format_money, info_message, warning_message
 
 
 class PickProductDialogQt(QDialog):
@@ -58,14 +58,19 @@ class PickProductDialogQt(QDialog):
             self._filtered = [
                 p
                 for p in self._all_products
-                if q in (p.get("name") or "").lower() or q in (p.get("code") or "").lower()
+                if q in (p.get("name") or "").lower()
+                or q in (p.get("code") or "").lower()
+                or q in (p.get("barcode") or "").lower()
             ]
         self._populate_listbox()
 
     def _populate_listbox(self) -> None:
         self._list.clear()
         for p in self._filtered:
-            line = f"{p.get('name', '')} — {p.get('code', '')} — {format_money(float(p.get('selling_price', 0)))}"
+            sku = p.get("code", "") or ""
+            bc = (p.get("barcode") or "").strip()
+            extra = f" · {bc}" if bc else ""
+            line = f"{p.get('name', '')} — SKU {sku}{extra} — {format_money(float(p.get('selling_price', 0)))}"
             self._list.addItem(line)
 
     def _ok(self) -> None:
@@ -115,7 +120,8 @@ class ReceiptPreviewDialogQt(QDialog):
         self.resize(460, 560)
         v = QVBoxLayout(self)
         hint = QLabel(
-            "Print a receipt for the customer or save a record file (archived in this shop's receipts folder)."
+            "Print for the customer if needed. A copy is saved to this shop's receipts folder when you click Done "
+            "(or use Save record anytime). "
         )
         hint.setWordWrap(True)
         v.addWidget(hint)
@@ -136,13 +142,19 @@ class ReceiptPreviewDialogQt(QDialog):
         row.addWidget(QPushButton("Print receipt", clicked=self._do_print))
         row.addWidget(QPushButton("Save record", clicked=self._do_save))
         row.addStretch(1)
-        row.addWidget(QPushButton("Done", clicked=self.accept))
+        row.addWidget(QPushButton("Done", clicked=self._on_done))
         v.addLayout(row)
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         self.raise_()
         self.activateWindow()
+
+    def _on_done(self) -> None:
+        ok, msg = archive_receipt_file(self._sale)
+        if not ok:
+            warning_message(self, "Receipt not saved", msg)
+        self.accept()
 
     def _do_print(self) -> None:
         ok, msg = print_receipt(self._sale)

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -30,14 +31,15 @@ from PySide6.QtWidgets import (
 from app.config import PAD_MD
 from app.services.parked_sales_service import MAX_PARKED_TICKETS, ParkedSalesService
 from app.services.product_service import ProductService
-from app.services.sales_service import SalesService
+from app.services.sales_service import SalesService, cashier_display_name
 
 from app.ui_qt.dialogs_qt import PickProductDialogQt, ReceiptPreviewDialogQt, RecallParkedDialogQt
 from app.ui_qt.helpers_qt import ask_yes_no, ask_yes_no_cancel, format_money, info_message, warning_message
 
 _CART_COLS = ("code", "name", "qty", "price", "disc", "total")
-_CART_TABLE_MIN_ROWS = 3
-_CART_TABLE_MAX_ROWS = 16
+# Compact empty cart; table grows with line count up to max, then scrolls.
+_CART_TABLE_MIN_ROWS = 2
+_CART_TABLE_MAX_ROWS = 18
 _CART_TABLE_ROW_PX = 28
 
 
@@ -96,11 +98,15 @@ class SalesView(QWidget):
         left_col.setSpacing(PAD_MD)
         left_col.setContentsMargins(0, 0, 0, 0)
 
-        register_card = QFrame()
-        register_card.setObjectName("card")
-        reg = QVBoxLayout(register_card)
+        scan_card = QFrame()
+        scan_card.setObjectName("card")
+        scan_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        reg = QVBoxLayout(scan_card)
         reg.setContentsMargins(16, 12, 16, 12)
         reg.setSpacing(8)
+        scan_title = QLabel("Scan & add")
+        scan_title.setObjectName("pageSubtitle")
+        reg.addWidget(scan_title)
 
         er = QGridLayout()
         er.setHorizontalSpacing(12)
@@ -120,7 +126,7 @@ class SalesView(QWidget):
         self._qty_spin.setFixedHeight(36)
         er.addWidget(self._qty_spin, 1, 0, alignment=Qt.AlignTop)
         self._search = QLineEdit()
-        self._search.setPlaceholderText("SKU, barcode, or name…")
+        self._search.setPlaceholderText("SKU, barcode scan, or name…")
         self._search.setFixedHeight(36)
         self._search.returnPressed.connect(self._on_add_product)
         er.addWidget(self._search, 1, 1, alignment=Qt.AlignTop)
@@ -147,17 +153,31 @@ class SalesView(QWidget):
         self._customer.setMinimumHeight(34)
         cust.addWidget(self._customer, 1)
         reg.addLayout(cust)
+        left_col.addWidget(scan_card)
+
+        cart_card = QFrame()
+        cart_card.setObjectName("card")
+        cart_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        cart_lay = QVBoxLayout(cart_card)
+        cart_lay.setContentsMargins(16, 12, 16, 12)
+        cart_lay.setSpacing(8)
+
+        cart_title = QLabel("Line items")
+        cart_title.setObjectName("pageSubtitle")
+        cart_lay.addWidget(cart_title)
 
         self._cart_table = QTableWidget(0, len(_CART_COLS))
         self._cart_table.setHorizontalHeaderLabels(["Code", "Product", "Qty", "Price", "Disc", "Line"])
         self._cart_table.setSelectionBehavior(QTableWidget.SelectRows)
         self._cart_table.setSelectionMode(QTableWidget.SingleSelection)
+        self._cart_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._cart_table.verticalHeader().setVisible(False)
         self._cart_table.verticalHeader().setDefaultSectionSize(_CART_TABLE_ROW_PX)
         self._cart_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         for c in (0, 2, 3, 4, 5):
             self._cart_table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        reg.addWidget(self._cart_table, 0)
+        self._cart_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        cart_lay.addWidget(self._cart_table, 0)
 
         def _act_btn(text: str, fn, min_w: int = 88) -> QPushButton:
             b = QPushButton(text, clicked=fn)
@@ -175,7 +195,7 @@ class SalesView(QWidget):
         act_row0.addWidget(_act_btn("Discount", self._line_discount))
         act_row0.addWidget(_act_btn("Remove", self._remove_selected_line))
         act_row0.addStretch(1)
-        reg.addLayout(act_row0)
+        cart_lay.addLayout(act_row0)
 
         act_row1 = QHBoxLayout()
         act_row1.setSpacing(8)
@@ -186,9 +206,9 @@ class SalesView(QWidget):
         act_row1.addWidget(_act_btn("Recall", self._recall_parked))
         act_row1.addStretch(1)
         act_row1.addWidget(_act_btn("Clear cart", self._confirm_clear_cart, 100))
-        reg.addLayout(act_row1)
+        cart_lay.addLayout(act_row1)
 
-        left_col.addWidget(register_card, 0)
+        left_col.addWidget(cart_card)
         left_col.addStretch(1)
 
         body.addLayout(left_col, stretch=3)
@@ -197,6 +217,7 @@ class SalesView(QWidget):
         pay_card.setObjectName("card")
         pay_card.setMinimumWidth(288)
         pay_card.setMaximumWidth(400)
+        pay_card.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         checkout = QVBoxLayout(pay_card)
         checkout.setContentsMargins(16, 12, 16, 12)
         checkout.setSpacing(8)
@@ -250,8 +271,6 @@ class SalesView(QWidget):
         tlay.addLayout(ch_row)
         checkout.addWidget(self._tender_frame)
 
-        checkout.addStretch(1)
-
         comp = QPushButton("Complete sale", clicked=self._complete_sale)
         comp.setObjectName("primary")
         comp.setCursor(Qt.PointingHandCursor)
@@ -262,11 +281,11 @@ class SalesView(QWidget):
         new_c.setMinimumHeight(36)
         checkout.addWidget(new_c)
 
-        body.addWidget(pay_card, stretch=1)
+        body.addWidget(pay_card, stretch=1, alignment=Qt.AlignmentFlag.AlignTop)
         root.addLayout(body, stretch=1)
 
         self._on_payment_change()
-        self._sync_cart_table_height()
+        QTimer.singleShot(0, self._sync_cart_table_height)
 
     def _on_payment_toggled(self, checked: bool, val: str) -> None:
         if checked:
@@ -299,6 +318,9 @@ class SalesView(QWidget):
         by_code = self._products.get_product_by_code(q)
         if by_code:
             return by_code
+        by_bc = self._products.get_product_by_barcode(q)
+        if by_bc:
+            return by_bc
         if len(q) < 2:
             return []
         return self._products.search_products(q)
@@ -563,6 +585,7 @@ class SalesView(QWidget):
         self._update_totals()
 
     def _sync_cart_table_height(self) -> None:
+        """Short when empty; grows with cart lines up to max visible rows, then scrolls."""
         n = len(self.cart)
         visible = min(max(n, _CART_TABLE_MIN_ROWS), _CART_TABLE_MAX_ROWS)
         hdr = self._cart_table.horizontalHeader().height()
@@ -570,7 +593,7 @@ class SalesView(QWidget):
             hdr = 28
         frame = self._cart_table.frameWidth() * 2
         h = hdr + visible * _CART_TABLE_ROW_PX + max(frame, 4)
-        self._cart_table.setFixedHeight(h)
+        self._cart_table.setFixedHeight(int(h))
 
     def _update_totals(self) -> None:
         t = self._sales.calculate_cart_total(self.cart)
@@ -637,6 +660,7 @@ class SalesView(QWidget):
                 {
                     "method": method,
                     "customer_name": self._customer.text().strip(),
+                    "cashier_name": cashier_display_name(getattr(self._main, "current_user", None)),
                 },
             )
         except Exception as e:
@@ -804,4 +828,5 @@ class SalesView(QWidget):
             self._kpi_labels["cash"].setText(format_money(cash))
         self._update_kpis_cart_lines()
         self._refresh_parked_from_db()
+        self._sync_cart_table_height()
         self._search.setFocus()

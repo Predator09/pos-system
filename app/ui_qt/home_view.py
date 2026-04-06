@@ -128,12 +128,6 @@ class HomeView(QWidget):
         ov.addLayout(pills)
         self._pill_group.idClicked.connect(lambda _id: self.refresh())
 
-        chart_ph = QFrame()
-        chart_ph.setObjectName("chartPlaceholder")
-        chart_ph.setMinimumHeight(240)
-        cpl = QVBoxLayout(chart_ph)
-        cpl.setContentsMargins(12, 10, 12, 12)
-        cpl.setSpacing(8)
         chart_hdr = QHBoxLayout()
         cpt = QLabel("Sales trend")
         cpt.setObjectName("chartPlaceholderTitle")
@@ -145,10 +139,10 @@ class HomeView(QWidget):
         sum_btn.setToolTip("Open a receipt-style text summary for the selected period")
         sum_btn.clicked.connect(self._open_period_sales_summary)
         chart_hdr.addWidget(sum_btn)
-        cpl.addLayout(chart_hdr)
+        ov.addLayout(chart_hdr)
         self._sales_chart = DashboardSalesChart()
-        cpl.addWidget(self._sales_chart, 1)
-        ov.addWidget(chart_ph)
+        self._sales_chart.setMinimumHeight(240)
+        ov.addWidget(self._sales_chart, 1)
 
         left_col.addWidget(overview)
 

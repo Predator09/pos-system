@@ -17,6 +17,7 @@ _UPDATABLE_FIELDS = frozenset(
     {
         "name",
         "code",
+        "barcode",
         "category",
         "description",
         "cost_price",
@@ -62,15 +63,39 @@ class ProductService:
         result = db.fetchone("SELECT * FROM products WHERE code = ?", (code,))
         return dict(result) if result else None
 
+    def get_product_by_barcode(self, raw: str | None):
+        """Exact match on trimmed barcode (case-insensitive)."""
+        b = (raw or "").strip()
+        if not b:
+            return None
+        result = db.fetchone(
+            """
+            SELECT * FROM products
+            WHERE barcode IS NOT NULL AND TRIM(barcode) != ''
+              AND LOWER(TRIM(barcode)) = LOWER(?)
+            """,
+            (b,),
+        )
+        return dict(result) if result else None
+
+    @staticmethod
+    def _norm_barcode(val) -> str | None:
+        if val is None:
+            return None
+        s = str(val).strip()
+        return s if s else None
+
     def search_products(self, query: str):
         query_param = f"%{query}%"
         results = db.fetchall(
             """
             SELECT * FROM products
-            WHERE is_active = 1 AND (name LIKE ? OR code LIKE ?)
+            WHERE is_active = 1 AND (
+                name LIKE ? OR code LIKE ? OR IFNULL(barcode, '') LIKE ?
+            )
             ORDER BY name
             """,
-            (query_param, query_param),
+            (query_param, query_param, query_param),
         )
         return [dict(row) for row in results]
 
@@ -94,8 +119,10 @@ class ProductService:
         q = (search or "").strip()
         if q:
             qq = f"%{q.lower()}%"
-            where.append("(LOWER(p.name) LIKE ? OR LOWER(p.code) LIKE ?)")
-            params.extend([qq, qq])
+            where.append(
+                "(LOWER(p.name) LIKE ? OR LOWER(p.code) LIKE ? OR LOWER(IFNULL(p.barcode, '')) LIKE ?)"
+            )
+            params.extend([qq, qq, qq])
         wh = " AND ".join(where)
         lim = max(1, min(int(limit), 500))
         params.append(lim)
@@ -169,18 +196,20 @@ class ProductService:
         selling_price: float,
         **kwargs,
     ):
+        bc = ProductService._norm_barcode(kwargs.get("barcode"))
         cursor = db.execute(
             """
             INSERT INTO products (
-                name, code, cost_price, selling_price, category, description,
+                name, code, barcode, cost_price, selling_price, category, description,
                 quantity_in_stock, minimum_stock_level, is_active,
                 expiry_date, image_path
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 name,
                 code,
+                bc,
                 cost_price,
                 selling_price,
                 kwargs.get("category"),
@@ -343,6 +372,7 @@ class ProductService:
         active_raw = str(row.get("is_active", "1")).strip().lower()
         is_active = active_raw in ("1", "true", "yes", "y", "active")
         existing = self.get_product_by_code(code)
+        bc = ProductService._norm_barcode(row.get("barcode"))
         common = dict(
             category=row.get("category") or None,
             description=row.get("description") or None,
@@ -353,6 +383,7 @@ class ProductService:
             is_active=1 if is_active else 0,
             expiry_date=(row.get("expiry_date") or "").strip() or None,
             image_path=(row.get("image_path") or "").strip() or None,
+            barcode=bc,
         )
         if existing:
             pid = int(existing["id"])
@@ -376,6 +407,7 @@ class ProductService:
             is_active=is_active,
             expiry_date=common["expiry_date"],
             image_path=common["image_path"],
+            barcode=bc,
         )
         return "insert", int(p["id"])
 
@@ -403,3 +435,25 @@ class ProductService:
         if qty <= float(product.get("minimum_stock_level") or 0):
             return "low"
         return "active_ok"
+
+    @staticmethod
+    def inventory_status_display(product: dict, *, tk_treeview: bool = False) -> str:
+        """Label for the inventory Status column (Low stock / Out of stock / …).
+
+        Tk ``ttk.Treeview`` cannot tint a single column; when ``tk_treeview`` is True,
+        a colored glyph is prefixed so the status column still reads red vs yellow.
+        """
+        tag = ProductService.inventory_row_tag(product)
+        if tag == "expired":
+            text = "Expired"
+            return f"🔴 {text}" if tk_treeview else text
+        if tag == "inactive":
+            text = "Inactive"
+            return f"🟡 {text}" if tk_treeview else text
+        if tag == "bad":
+            text = "Out of stock"
+            return f"🔴 {text}" if tk_treeview else text
+        if tag == "low":
+            text = "Low stock"
+            return f"🟡 {text}" if tk_treeview else text
+        return "Active"

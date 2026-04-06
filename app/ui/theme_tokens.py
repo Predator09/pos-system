@@ -1,9 +1,4 @@
-"""Design tokens — reference palette for the POS UI.
-
-These mirror a CSS-style variable layer. ttkbootstrap themes supply actual
-widget colors; use bootstyle keywords (primary, success, …) on widgets.
-Tokens are used for documentation, exports, and optional tk (non-ttk) accents.
-"""
+"""Design tokens — reference palette for the POS UI (Qt QSS + shared constants)."""
 
 from __future__ import annotations
 
@@ -29,7 +24,7 @@ class UIThemeTokens:
 
 TOKENS = UIThemeTokens
 
-# Maps token roles to typical ttkbootstrap bootstyle roots for new widgets.
+# Optional mapping of semantic roles to style roots (legacy / docs).
 BOOTSTYLE_BY_ROLE: dict[str, str] = {
     "primary": "primary",
     "success": "success",
@@ -38,7 +33,7 @@ BOOTSTYLE_BY_ROLE: dict[str, str] = {
     "neutral": "secondary",
 }
 
-# CustomTkinter label text colors: (light appearance, dark appearance)
+# Label text colors (light / dark appearance tuples) — used where noted in Qt/Tk-era labels.
 CTK_TEXT_MUTED: Final[tuple[str, str]] = ("#5c636a", "#adb5bd")
 CTK_TEXT_SUCCESS: Final[tuple[str, str]] = ("#198754", "#75b798")
 CTK_TEXT_DANGER: Final[tuple[str, str]] = ("#c1121f", "#f1aeb5")

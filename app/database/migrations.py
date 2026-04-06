@@ -53,6 +53,18 @@ class DatabaseMigrations:
 
         if current_version < 7:
             self._migrate_v7()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
+        if current_version < 8:
+            self._migrate_v8()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
+        if current_version < 9:
+            self._migrate_v9()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
 
         self.db.close()
 
@@ -250,3 +262,24 @@ class DatabaseMigrations:
                 "ALTER TABLE purchase_receipts ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id)"
             )
         self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (7,))
+
+    def _migrate_v8(self):
+        """Separate retail barcode from internal SKU (``code``)."""
+        cols = {row[1] for row in self.db.fetchall("PRAGMA table_info(products)")}
+        if "barcode" not in cols:
+            self.db.execute("ALTER TABLE products ADD COLUMN barcode TEXT")
+        self.db.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode_unique
+            ON products(barcode)
+            WHERE barcode IS NOT NULL AND TRIM(barcode) != ''
+            """
+        )
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (8,))
+
+    def _migrate_v9(self):
+        """Cashier / staff name on sales for receipts."""
+        cols = {row[1] for row in self.db.fetchall("PRAGMA table_info(sales)")}
+        if "cashier_name" not in cols:
+            self.db.execute("ALTER TABLE sales ADD COLUMN cashier_name TEXT")
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (9,))

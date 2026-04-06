@@ -11,6 +11,7 @@ _PRODUCT_COLUMNS = (
     "id",
     "name",
     "code",
+    "barcode",
     "category",
     "description",
     "quantity_in_stock",
@@ -34,6 +35,7 @@ _SALES_COLUMNS = (
     "total_amount",
     "payment_method",
     "customer_name",
+    "cashier_name",
     "notes",
     "is_synced",
     "created_at",
@@ -130,7 +132,16 @@ class BackupService:
             with open(export_file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(
-                    ["Invoice", "Date", "Subtotal", "Discount", "Total", "Items", "Payment Method"]
+                    [
+                        "Invoice",
+                        "Date",
+                        "Subtotal",
+                        "Discount",
+                        "Total",
+                        "Items",
+                        "Payment Method",
+                        "Staff",
+                    ]
                 )
                 for row in results:
                     writer.writerow(
@@ -142,6 +153,7 @@ class BackupService:
                             row["total_amount"],
                             row["item_count"],
                             row["payment_method"],
+                            row["cashier_name"] if "cashier_name" in row.keys() else "",
                         ]
                     )
 

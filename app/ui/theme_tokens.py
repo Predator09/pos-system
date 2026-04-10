@@ -4,20 +4,29 @@ from __future__ import annotations
 
 from typing import Final
 
+# Layered surfaces (Qt shell — base canvas, cards, elevated/table chrome)
+SURFACE_BASE_LIGHT: Final[str] = "#f1f5f9"
+SURFACE_CARD_LIGHT: Final[str] = "#ffffff"
+SURFACE_ELEVATED_LIGHT: Final[str] = "#e2e8f0"
+
+SURFACE_BASE_DARK: Final[str] = "#020617"
+SURFACE_CARD_DARK: Final[str] = "#0f172a"
+SURFACE_ELEVATED_DARK: Final[str] = "#1e293b"
+
 
 class UIThemeTokens:
     """Brand and semantic colors (hex, sRGB) — modern cyan-forward accent, shared by Tk + Qt."""
 
-    PRIMARY: Final[str] = "#0891b2"
-    PRIMARY_HOVER: Final[str] = "#06b6d4"
-    PRIMARY_MUTED: Final[str] = "#0e7490"
-    SUCCESS: Final[str] = "#059669"
-    SUCCESS_HOVER: Final[str] = "#10b981"
+    PRIMARY: Final[str] = "#06b6d4"
+    PRIMARY_HOVER: Final[str] = "#22d3ee"
+    PRIMARY_MUTED: Final[str] = "#0891b2"
+    SUCCESS: Final[str] = "#16a34a"
+    SUCCESS_HOVER: Final[str] = "#22c55e"
     WARNING: Final[str] = "#d97706"
     DANGER: Final[str] = "#dc2626"
-    # App canvas: cool gray (light) / ink slate (dark) — pairs with Qt QSS + CTk theme
-    BG_LIGHT: Final[str] = "#e8ecf3"
-    BG_DARK: Final[str] = "#070b11"
+    # App canvas — aligned with layered surfaces
+    BG_LIGHT: Final[str] = SURFACE_BASE_LIGHT
+    BG_DARK: Final[str] = SURFACE_BASE_DARK
     TEXT_LIGHT: Final[str] = "#212529"
     TEXT_DARK: Final[str] = "#E9ECEF"
 
@@ -45,9 +54,9 @@ PRODUCT_ROW_INACTIVE_BG: Final[str] = "#3d3518"
 PRODUCT_ROW_INACTIVE_FG: Final[str] = "#fbbf24"
 PRODUCT_ROW_EXPIRED_BG: Final[str] = "#421a1a"
 PRODUCT_ROW_EXPIRED_FG: Final[str] = "#fecaca"
-# In-stock “normal” rows: light = paper white / black; dark = card surface (matches CTkFrame dark top)
-PRODUCT_ROW_ACTIVE_OK_BG_LIGHT: Final[str] = "#ffffff"
-PRODUCT_ROW_ACTIVE_OK_BG_DARK: Final[str] = "#121b2a"
+# In-stock “normal” rows: elevated / card surfaces (matches layered Qt tables)
+PRODUCT_ROW_ACTIVE_OK_BG_LIGHT: Final[str] = SURFACE_CARD_LIGHT
+PRODUCT_ROW_ACTIVE_OK_BG_DARK: Final[str] = SURFACE_ELEVATED_DARK
 PRODUCT_ROW_ACTIVE_OK_FG_LIGHT: Final[str] = "#000000"
 PRODUCT_ROW_ACTIVE_OK_FG_DARK: Final[str] = "#e2e8f0"
 PRODUCT_STATUS_INACTIVE_QT_BG: Final[str] = "#78350f"
@@ -66,18 +75,18 @@ def product_active_row_surface(appearance: str) -> tuple[str, str]:
 # --- CustomTkinter shell (light / dark appearance tuples) ---
 CTK_CARD_BORDER: Final[tuple[str, str]] = ("#e2e8f0", "#334155")
 CTK_CARD_BORDER_STRONG: Final[tuple[str, str]] = ("#cbd5e1", "#475569")
-CTK_BTN_PRIMARY_FG: Final[tuple[str, str]] = ("#0e7490", "#0891b2")
-CTK_BTN_PRIMARY_HOVER: Final[tuple[str, str]] = ("#155e75", "#06b6d4")
+CTK_BTN_PRIMARY_FG: Final[tuple[str, str]] = ("#0891b2", "#22d3ee")
+CTK_BTN_PRIMARY_HOVER: Final[tuple[str, str]] = ("#06b6d4", "#67e8f9")
 CTK_BTN_GHOST_BORDER: Final[tuple[str, str]] = ("#94a3b8", "#475569")
 CTK_BTN_GHOST_HOVER: Final[tuple[str, str]] = ("#f1f5f9", "#1e293b")
 
 # Main window top nav pills
-CTK_NAV_SELECTED_FG: Final[tuple[str, str]] = ("#0e7490", "#0891b2")
-CTK_NAV_SELECTED_HOVER: Final[tuple[str, str]] = ("#155e75", "#06b6d4")
-CTK_NAV_SALES_SELECTED: Final[tuple[str, str]] = ("#047857", "#059669")
-CTK_NAV_SALES_HOVER: Final[tuple[str, str]] = ("#065f46", "#10b981")
-CTK_NAV_BORDER_ACCENT: Final[tuple[str, str]] = ("#0891b2", "#22d3ee")
-CTK_NAV_BORDER_SALES: Final[tuple[str, str]] = ("#059669", "#34d399")
+CTK_NAV_SELECTED_FG: Final[tuple[str, str]] = ("#0e7490", "#22d3ee")
+CTK_NAV_SELECTED_HOVER: Final[tuple[str, str]] = ("#155e75", "#5eead4")
+CTK_NAV_SALES_SELECTED: Final[tuple[str, str]] = ("#15803d", "#22c55e")
+CTK_NAV_SALES_HOVER: Final[tuple[str, str]] = ("#166534", "#4ade80")
+CTK_NAV_BORDER_ACCENT: Final[tuple[str, str]] = ("#06b6d4", "#22d3ee")
+CTK_NAV_BORDER_SALES: Final[tuple[str, str]] = ("#16a34a", "#4ade80")
 CTK_NAV_BORDER_MUTED: Final[tuple[str, str]] = ("#cbd5e1", "#475569")
 CTK_NAV_TEXT_MUTED: Final[tuple[str, str]] = ("#475569", "#94a3b8")
 CTK_NAV_HOVER_SURFACE: Final[tuple[str, str]] = ("#f1f5f9", "#1e293b")

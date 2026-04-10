@@ -14,12 +14,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QGraphicsDropShadowEffect,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from app.config import PAD_MD
 from app.database.connection import db
 from app.services.auth_service import AuthService
 from app.services.shop_context import (
@@ -36,6 +37,12 @@ from app.ui_qt.helpers_qt import warning_message
 from app.ui_qt.logo_widget import ShopLogoLabel
 
 
+def _login_field_label(text: str) -> QLabel:
+    lab = QLabel(text)
+    lab.setObjectName("loginFieldLabel")
+    return lab
+
+
 class LoginView(QWidget):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
@@ -45,26 +52,28 @@ class LoginView(QWidget):
         self._has_users = self.auth.has_any_users()
 
         outer = QVBoxLayout(self)
-        outer.addStretch(1)
+        outer.setContentsMargins(0, 0, 0, 0)
 
         center = QWidget()
+        center.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         cv = QVBoxLayout(center)
         cv.setAlignment(Qt.AlignHCenter)
+        cv.setSpacing(0)
 
-        self._logo = ShopLogoLabel(center, size=96, editable=True)
+        self._logo = ShopLogoLabel(center, size=56, editable=True)
         cv.addWidget(self._logo, alignment=Qt.AlignCenter)
-        cv.addSpacing(PAD_MD)
+        cv.addSpacing(4)
 
         shop_pick = QWidget()
         shop_h = QHBoxLayout(shop_pick)
         shop_h.setContentsMargins(0, 0, 0, 0)
-        shop_h.setSpacing(8)
+        shop_h.setSpacing(6)
         sl = QLabel("Shop")
         sl.setObjectName("muted")
         shop_h.addStretch(1)
         shop_h.addWidget(sl)
         self._shop_combo = QComboBox()
-        self._shop_combo.setMinimumWidth(220)
+        self._shop_combo.setMinimumWidth(180)
         self._shop_combo.setFocusPolicy(Qt.StrongFocus)
         self._shop_combo.currentIndexChanged.connect(self._on_shop_index_changed)
         shop_h.addWidget(self._shop_combo)
@@ -75,7 +84,7 @@ class LoginView(QWidget):
         shop_h.addWidget(new_shop_btn)
         shop_h.addStretch(1)
         cv.addWidget(shop_pick, alignment=Qt.AlignCenter)
-        cv.addSpacing(PAD_MD // 2)
+        cv.addSpacing(4)
 
         bn_lbl = QLabel("Business name")
         bn_lbl.setObjectName("muted")
@@ -85,12 +94,13 @@ class LoginView(QWidget):
         shop_row = QWidget()
         shop_h = QHBoxLayout(shop_row)
         shop_h.setContentsMargins(0, 0, 0, 0)
-        shop_h.setSpacing(8)
+        shop_h.setSpacing(6)
         self._shop_entry = QLineEdit()
-        self._shop_entry.setMinimumWidth(240)
+        self._shop_entry.setMinimumWidth(200)
+        self._shop_entry.setMaximumWidth(360)
         self._shop_entry.setText(get_display_shop_name())
         tf = QFont()
-        tf.setPointSize(16)
+        tf.setPointSize(12)
         tf.setBold(True)
         self._shop_entry.setFont(tf)
         shop_h.addStretch(1)
@@ -102,9 +112,11 @@ class LoginView(QWidget):
         shop_h.addWidget(save_shop)
         shop_h.addStretch(1)
         cv.addWidget(shop_row, alignment=Qt.AlignCenter)
+        cv.addSpacing(6)
 
         self._stack = QStackedWidget()
         self._stack.setMinimumWidth(320)
+        self._stack.setMaximumWidth(400)
 
         # --- Page 0: Sign in ---
         sign_wrap = QWidget()
@@ -112,28 +124,28 @@ class LoginView(QWidget):
         sign_outer.setContentsMargins(0, 0, 0, 0)
         card = QFrame()
         card.setObjectName("loginCard")
+        card.setMinimumWidth(300)
+        card.setMaximumWidth(400)
         shadow = QGraphicsDropShadowEffect(card)
-        shadow.setBlurRadius(56)
-        shadow.setColor(QColor(0, 0, 0, 72))
-        shadow.setOffset(0, 14)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 40))
+        shadow.setOffset(0, 4)
         card.setGraphicsEffect(shadow)
         gl = QGridLayout(card)
-        gl.setContentsMargins(28, 24, 28, 24)
-        gl.setHorizontalSpacing(12)
-        gl.setVerticalSpacing(10)
+        gl.setContentsMargins(14, 12, 14, 12)
+        gl.setHorizontalSpacing(8)
+        gl.setVerticalSpacing(4)
 
         sign_hdr = QLabel("Sign in")
-        sign_hdr.setObjectName("section")
+        sign_hdr.setObjectName("loginTitle")
         gl.addWidget(sign_hdr, 0, 0, 1, 2)
-        gl.addWidget(QLabel("Username"), 1, 0, 1, 2)
+        gl.addWidget(_login_field_label("Username"), 1, 0, 1, 2)
         self._user_entry = QLineEdit()
         self._user_entry.setText("admin" if self._has_users else "")
-        self._user_entry.setMinimumWidth(280)
         gl.addWidget(self._user_entry, 2, 0, 1, 2)
-        gl.addWidget(QLabel("Password"), 3, 0, 1, 2)
+        gl.addWidget(_login_field_label("Password"), 3, 0, 1, 2)
         self._pass_entry = QLineEdit()
         self._pass_entry.setEchoMode(QLineEdit.Password)
-        self._pass_entry.setMinimumWidth(280)
         gl.addWidget(self._pass_entry, 4, 0, 1, 2)
 
         self._error = QLabel("")
@@ -150,99 +162,89 @@ class LoginView(QWidget):
         sign_outer.addWidget(card)
         self._stack.addWidget(sign_wrap)
 
-        # --- Page 1: Register ---
+        # --- Page 1: Register (wide card: identity on top; username | passwords in two columns) ---
         up_wrap = QWidget()
         up_outer = QVBoxLayout(up_wrap)
         up_outer.setContentsMargins(0, 0, 0, 0)
         up_card = QFrame()
         up_card.setObjectName("loginCard")
+        up_card.setMinimumWidth(300)
+        up_card.setMaximumWidth(400)
         us = QGraphicsDropShadowEffect(up_card)
-        us.setBlurRadius(56)
-        us.setColor(QColor(0, 0, 0, 72))
-        us.setOffset(0, 14)
+        us.setBlurRadius(20)
+        us.setColor(QColor(0, 0, 0, 40))
+        us.setOffset(0, 4)
         up_card.setGraphicsEffect(us)
-        ug = QGridLayout(up_card)
-        ug.setContentsMargins(28, 24, 28, 24)
-        ug.setHorizontalSpacing(12)
-        ug.setVerticalSpacing(10)
+        ul = QVBoxLayout(up_card)
+        ul.setContentsMargins(14, 12, 14, 12)
+        ul.setSpacing(5)
 
-        r = 0
-        uh = QLabel("Add new shop")
-        uh.setObjectName("section")
-        ug.addWidget(uh, r, 0, 1, 2)
-        r += 1
-        hint = QLabel(
-            "Your business name above will be used for receipts and the app. You will be the owner."
-        )
+        uh = QLabel("Create account")
+        uh.setObjectName("loginTitle")
+        ul.addWidget(uh)
+        hint = QLabel("You’ll be the owner of this shop.")
         hint.setObjectName("muted")
         hint.setWordWrap(True)
-        ug.addWidget(hint, r, 0, 1, 2)
-        r += 1
+        ul.addWidget(hint)
 
-        ug.addWidget(QLabel("Your full name"), r, 0, 1, 2)
-        r += 1
+        ul.addWidget(_login_field_label("Full name"))
         self._reg_full = QLineEdit()
-        self._reg_full.setMinimumWidth(280)
-        ug.addWidget(self._reg_full, r, 0, 1, 2)
-        r += 1
-        ug.addWidget(QLabel("Username"), r, 0, 1, 2)
-        r += 1
+        ul.addWidget(self._reg_full)
+
+        ul.addWidget(_login_field_label("Username"))
         self._reg_user = QLineEdit()
-        self._reg_user.setMinimumWidth(280)
-        ug.addWidget(self._reg_user, r, 0, 1, 2)
-        r += 1
-        ug.addWidget(QLabel("Password"), r, 0, 1, 2)
-        r += 1
+        ul.addWidget(self._reg_user)
+
+        ul.addWidget(_login_field_label("Password"))
         self._reg_pass = QLineEdit()
         self._reg_pass.setEchoMode(QLineEdit.Password)
-        self._reg_pass.setMinimumWidth(280)
-        ug.addWidget(self._reg_pass, r, 0, 1, 2)
-        r += 1
-        ug.addWidget(QLabel("Confirm password"), r, 0, 1, 2)
-        r += 1
+        ul.addWidget(self._reg_pass)
+
+        ul.addWidget(_login_field_label("Confirm password"))
         self._reg_confirm = QLineEdit()
         self._reg_confirm.setEchoMode(QLineEdit.Password)
-        self._reg_confirm.setMinimumWidth(280)
-        ug.addWidget(self._reg_confirm, r, 0, 1, 2)
-        r += 1
+        ul.addWidget(self._reg_confirm)
 
         self._reg_error = QLabel("")
         self._reg_error.setObjectName("errorText")
         self._reg_error.setWordWrap(True)
-        ug.addWidget(self._reg_error, r, 0, 1, 2)
-        r += 1
+        ul.addWidget(self._reg_error)
 
-        create_btn = QPushButton("Create shop & sign in")
+        create_btn = QPushButton("Create & sign in")
         create_btn.setObjectName("primary")
         create_btn.setCursor(Qt.PointingHandCursor)
         create_btn.clicked.connect(self._try_register)
-        ug.addWidget(create_btn, r, 0, 1, 2)
-        r += 1
+        ul.addWidget(create_btn)
         back_btn = QPushButton("Back to sign in")
         back_btn.setObjectName("ghost")
         back_btn.setCursor(Qt.PointingHandCursor)
         back_btn.clicked.connect(self._show_signin)
-        ug.addWidget(back_btn, r, 0, 1, 2)
+        ul.addWidget(back_btn)
 
         up_outer.addWidget(up_card)
         self._stack.addWidget(up_wrap)
 
-        cv.addSpacing(PAD_MD * 2)
         cv.addWidget(self._stack, alignment=Qt.AlignCenter)
 
-        hint2 = QLabel(
-            "Hello 👋 How's your day? Hope it's a good one! ☀️\n\n"
-            "Set your business name above — it's saved for receipts and the app. "
-            "Tap the circle for your logo (right-click to remove). ✨"
+        self._footer_greeting = QLabel(
+            "Hello 👋 Hope you're having a good day.\n\n"
+            "Your business name and logo above appear on receipts. "
+            "Tap the circle to add your logo (right‑click to remove)."
         )
-        hint2.setObjectName("muted")
-        hint2.setWordWrap(True)
-        hint2.setMaximumWidth(400)
-        hint2.setAlignment(Qt.AlignCenter)
-        cv.addWidget(hint2, alignment=Qt.AlignCenter)
+        self._footer_greeting.setObjectName("loginFooter")
+        self._footer_greeting.setWordWrap(True)
+        self._footer_greeting.setAlignment(Qt.AlignCenter)
+        self._footer_greeting.setMaximumWidth(400)
+        cv.addWidget(self._footer_greeting, alignment=Qt.AlignCenter)
 
-        outer.addWidget(center, alignment=Qt.AlignCenter)
-        outer.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setObjectName("loginScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setWidget(center)
+        outer.addWidget(scroll, 1)
 
         self._user_entry.returnPressed.connect(self._pass_entry.setFocus)
         self._pass_entry.returnPressed.connect(self._try_login)

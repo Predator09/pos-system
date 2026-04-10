@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from app import config as app_config
+from app.runtime_paths import get_data_dir
 
 AppearanceMode = Literal["dark", "light"]
 
@@ -19,21 +20,25 @@ def theme_for_appearance(mode: AppearanceMode | str) -> str:
 
 
 class AppSettings:
-    _FILE = Path("data/app_settings.json")
+    @staticmethod
+    def _file() -> Path:
+        return get_data_dir() / "app_settings.json"
 
     def _load(self) -> dict:
-        self._FILE.parent.mkdir(parents=True, exist_ok=True)
-        if not self._FILE.is_file():
+        path = self._file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.is_file():
             return {}
         try:
-            with open(self._FILE, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             return {}
 
     def _save(self, data: dict) -> None:
-        self._FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._FILE, "w", encoding="utf-8") as f:
+        path = self._file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
     def get_appearance(self) -> AppearanceMode:

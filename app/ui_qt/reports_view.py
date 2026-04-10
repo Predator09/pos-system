@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import PAD_MD
+from app.ui.date_display import format_iso_date_as_display, parse_date_input
 from app.services.product_service import ProductService
 from app.services.reports_service import ReportsService, format_report_period_title, format_sales_calendar_day
 from app.services.sales_service import SalesService
@@ -38,15 +40,15 @@ _TOP_SELLERS_LIMIT = 15
 
 def _first_of_month() -> str:
     t = date.today()
-    return t.replace(day=1).isoformat()
+    return format_iso_date_as_display(t.replace(day=1).isoformat())
 
 
 def _today() -> str:
-    return date.today().isoformat()
+    return format_iso_date_as_display(date.today().isoformat())
 
 
 def _seven_days_ago() -> str:
-    return (date.today() - timedelta(days=6)).isoformat()
+    return format_iso_date_as_display((date.today() - timedelta(days=6)).isoformat())
 
 
 class ReportsView(QWidget):
@@ -65,7 +67,8 @@ class ReportsView(QWidget):
         t.setObjectName("title")
         root.addWidget(t)
         sub = QLabel(
-            "Daily report: one calendar day or a date range (inclusive). Stock & CSV on tab 2; sales receipts by day on tab 3."
+            "Daily report: one calendar day or a date range (inclusive), dates as DD-MM-YYYY. "
+            "Stock & CSV on tab 2; sales receipts by day on tab 3."
         )
         sub.setObjectName("muted")
         sub.setWordWrap(True)
@@ -74,10 +77,13 @@ class ReportsView(QWidget):
         bar = QHBoxLayout()
         bar.addWidget(QLabel("From"))
         self._start = QLineEdit(_today())
-        self._start.setFixedWidth(120)
+        self._start.setFixedWidth(110)
+        self._start.setPlaceholderText("DD-MM-YYYY")
         bar.addWidget(self._start)
         bar.addWidget(QLabel("To"))
         self._end = QLineEdit(_today())
+        self._end.setFixedWidth(110)
+        self._end.setPlaceholderText("DD-MM-YYYY")
         self._end.setFixedWidth(120)
         bar.addWidget(self._end)
         td = QPushButton("Today")
@@ -98,14 +104,21 @@ class ReportsView(QWidget):
         m.clicked.connect(self._this_month)
         bar.addWidget(m)
         bar.addStretch(1)
-        root.addLayout(bar)
 
         self._err = QLabel("")
         self._err.setObjectName("errorText")
-        root.addWidget(self._err)
 
         tabs = QTabWidget()
-        root.addWidget(tabs, 1)
+
+        body_card = QFrame()
+        body_card.setObjectName("card")
+        body_l = QVBoxLayout(body_card)
+        body_l.setContentsMargins(16, 16, 16, 16)
+        body_l.setSpacing(PAD_MD)
+        body_l.addLayout(bar)
+        body_l.addWidget(self._err)
+        body_l.addWidget(tabs, 1)
+        root.addWidget(body_card, 1)
 
         # --- Daily report (scrollable) ---
         daily_outer = QWidget()
@@ -171,7 +184,7 @@ class ReportsView(QWidget):
 
         daily_l.addWidget(QLabel("<b>Top sellers (by revenue)</b>"))
         self._top_table = QTableWidget(0, 4)
-        self._top_table.setHorizontalHeaderLabels(["SKU", "Product", "Qty", "Revenue"])
+        self._top_table.setHorizontalHeaderLabels(["PC", "Product", "Qty", "Revenue"])
         self._stretch_col(self._top_table, 1)
         self._top_table.setMinimumHeight(200)
         daily_l.addWidget(self._top_table, 1)
@@ -197,7 +210,7 @@ class ReportsView(QWidget):
         self._inv_grid = QGridLayout()
         self._inv_labels: dict[str, QLabel] = {}
         inv_specs = [
-            ("skus", "Active SKUs"),
+            ("skus", "Active products"),
             ("units", "Units on hand"),
             ("retail_value", "Retail value"),
             ("cost_value", "Cost value"),
@@ -212,7 +225,7 @@ class ReportsView(QWidget):
 
         more_l.addWidget(QLabel("<b>Low stock (≤ min)</b>"))
         self._low_table = QTableWidget(0, 4)
-        self._low_table.setHorizontalHeaderLabels(["SKU", "Product", "Stock", "Min"])
+        self._low_table.setHorizontalHeaderLabels(["PC", "Product", "Stock", "Min"])
         self._stretch_col(self._low_table, 1)
         self._low_table.setMaximumHeight(260)
         more_l.addWidget(self._low_table)
@@ -297,18 +310,19 @@ class ReportsView(QWidget):
         if not sale:
             return False
         raw_date = str(sale.get("sale_date") or "").strip()
-        day = raw_date[:10]
-        if len(day) != 10:
-            day = _today()
-        self._start.setText(day)
-        self._end.setText(day)
+        day_iso = raw_date[:10]
+        if len(day_iso) != 10 or day_iso[4] != "-":
+            day_iso = date.today().isoformat()
+        day_disp = format_iso_date_as_display(day_iso)
+        self._start.setText(day_disp)
+        self._end.setText(day_disp)
         self.refresh()
         gross = float(sale.get("total_amount") or 0)
         pm = (sale.get("payment_method") or "").strip() or "—"
         info_message(
             self.window(),
             "Invoice found",
-            f"{sale.get('invoice_number')}\n{day} · {format_money(gross)} · {pm}",
+            f"{sale.get('invoice_number')}\n{day_disp} · {format_money(gross)} · {pm}",
         )
         return True
 
@@ -362,7 +376,13 @@ class ReportsView(QWidget):
 
     def refresh(self) -> None:
         self._err.setText("")
-        start, end = self._range()
+        start_raw, end_raw = self._range()
+        try:
+            start = parse_date_input(start_raw)
+            end = parse_date_input(end_raw)
+        except ValueError as e:
+            self._err.setText(str(e))
+            return
         try:
             summary = self._svc.sales_summary(start, end)
         except ValueError as e:
@@ -491,7 +511,13 @@ class ReportsView(QWidget):
         self._fill_table(self._low_table, low_rows)
 
     def _export_sales(self) -> None:
-        start, end = self._range()
+        start_raw, end_raw = self._range()
+        try:
+            start = parse_date_input(start_raw)
+            end = parse_date_input(end_raw)
+        except ValueError as e:
+            warning_message(self.window(), "Export", str(e))
+            return
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export sales",
@@ -508,7 +534,13 @@ class ReportsView(QWidget):
         info_message(self.window(), "Export", f"Saved:\n{out}")
 
     def _export_lines(self) -> None:
-        start, end = self._range()
+        start_raw, end_raw = self._range()
+        try:
+            start = parse_date_input(start_raw)
+            end = parse_date_input(end_raw)
+        except ValueError as e:
+            warning_message(self.window(), "Export", str(e))
+            return
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export sale lines",

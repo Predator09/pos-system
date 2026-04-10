@@ -184,8 +184,11 @@ class BackupService:
 
         return str(export_file)
 
-    def auto_backup_daily(self):
-        """Create automatic daily backup."""
+    def auto_backup_daily(self) -> None:
+        """At most one automatic JSON backup per calendar day (avoids UI stall on every login)."""
+        today = datetime.now().strftime("%Y%m%d")
+        if any(self.backup_dir.glob(f"backup_{today}_*.json")):
+            return
         self.create_full_backup()
 
     def restore_from_backup(self, backup_file: str) -> bool:

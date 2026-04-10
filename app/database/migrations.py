@@ -264,7 +264,7 @@ class DatabaseMigrations:
         self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (7,))
 
     def _migrate_v8(self):
-        """Separate retail barcode from internal SKU (``code``)."""
+        """Separate retail barcode from internal product code (``code`` / PC)."""
         cols = {row[1] for row in self.db.fetchall("PRAGMA table_info(products)")}
         if "barcode" not in cols:
             self.db.execute("ALTER TABLE products ADD COLUMN barcode TEXT")

@@ -10,7 +10,12 @@ env/
 *.egg-info/
 .eggs/
 dist/
+dist_built/
+dist_test/
+dist_installer/
 build/
+build_built/
+build_test/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

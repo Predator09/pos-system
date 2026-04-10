@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QInputDialog,
@@ -24,23 +25,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config import PAD_MD
+from app.ui.date_display import format_iso_date_as_display, parse_expiry_input
 from app.services.app_settings import AppSettings
 from app.services.product_service import ProductService
 from app.ui.theme_tokens import product_active_row_surface
 
 from app.ui_qt.helpers_qt import ask_yes_no, format_money, info_message, warning_message
 
-_TREE_COLS = ("id", "name", "sku", "barcode", "category", "price", "stock", "cost", "live", "status", "expiry")
+_TREE_COLS = ("id", "name", "pc", "barcode", "category", "price", "stock", "cost", "status", "expiry")
 _TABLE_HEADERS = (
     "ID",
     "Name",
-    "SKU",
+    "PC",
     "Barcode",
     "Category",
     "Price",
     "Stock",
     "Cost",
-    "Live value",
     "Status",
     "Expiry",
 )
@@ -96,6 +98,7 @@ class ProductEditorDialogQt(QDialog):
         self._status = QComboBox()
         self._status.addItems(["active", "inactive"])
         self._expiry = QLineEdit()
+        self._expiry.setPlaceholderText("DD-MM-YYYY")
         self._image = QLineEdit()
         img_browse = QPushButton("Browse…")
         img_browse.clicked.connect(self._browse_image)
@@ -108,14 +111,14 @@ class ProductEditorDialogQt(QDialog):
 
         f.addRow("Name", self._name)
         f.addRow("Category", self._category)
-        f.addRow("SKU", self._code)
+        f.addRow("PC", self._code)
         f.addRow("Barcode (optional)", self._barcode)
         f.addRow("Selling price (GMD)", self._price)
         f.addRow("Cost (GMD)", self._cost)
         f.addRow("Stock qty", self._stock)
         f.addRow("Min alert level", self._min_alert)
         f.addRow("Status", self._status)
-        f.addRow("Expiry (YYYY-MM-DD)", self._expiry)
+        f.addRow("Expiry (DD-MM-YYYY)", self._expiry)
         f.addRow("Image path", img_row)
         f.addRow("Description", self._desc)
 
@@ -136,11 +139,12 @@ class ProductEditorDialogQt(QDialog):
                 self._stock.setText(str(p.get("quantity_in_stock") or 0))
                 self._min_alert.setText(str(p.get("minimum_stock_level") or 10))
                 self._status.setCurrentIndex(0 if p.get("is_active") else 1)
-                self._expiry.setText((p.get("expiry_date") or "") or "")
+                ex0 = (p.get("expiry_date") or "") or ""
+                self._expiry.setText(format_iso_date_as_display(ex0) if ex0 else "")
                 self._image.setText((p.get("image_path") or "") or "")
                 self._desc.setText(p.get("description") or "")
             outer.addWidget(
-                QLabel("SKU is your internal code. Barcode is for scanning (unique when set).")
+                QLabel("PC is your internal product code. Barcode is for scanning (unique when set).")
             )
 
         outer.addLayout(f)
@@ -175,7 +179,7 @@ class ProductEditorDialogQt(QDialog):
         bc_raw = self._barcode.text().strip()
         bc = bc_raw if bc_raw else None
         if not name or not code:
-            warning_message(self, "Product", "Name and SKU are required.")
+            warning_message(self, "Product", "Name and product code (PC) are required.")
             return
         if bc:
             holder = self.service.get_product_by_barcode(bc)
@@ -190,9 +194,11 @@ class ProductEditorDialogQt(QDialog):
         except ValueError as e:
             warning_message(self, "Product", str(e))
             return
-        exp = self._expiry.text().strip()
-        if exp and len(exp) != 10:
-            warning_message(self, "Product", "Use expiry format YYYY-MM-DD or leave blank.")
+        exp_raw = self._expiry.text().strip()
+        try:
+            exp = parse_expiry_input(exp_raw)
+        except ValueError:
+            warning_message(self, "Product", "Use expiry format DD-MM-YYYY or leave blank.")
             return
         is_active = 1 if self._status.currentText() == "active" else 0
         img = self._image.text().strip() or None
@@ -212,12 +218,12 @@ class ProductEditorDialogQt(QDialog):
                     quantity_in_stock=stock,
                     minimum_stock_level=min_a,
                     is_active=is_active,
-                    expiry_date=exp or None,
+                    expiry_date=exp,
                     image_path=img,
                 )
             else:
                 if self.service.get_product_by_code(code):
-                    warning_message(self, "Product", "That SKU already exists.")
+                    warning_message(self, "Product", "That product code (PC) already exists.")
                     return
                 self.service.create_product(
                     name,
@@ -229,7 +235,7 @@ class ProductEditorDialogQt(QDialog):
                     quantity_in_stock=stock,
                     minimum_stock_level=min_a,
                     is_active=bool(is_active),
-                    expiry_date=exp or None,
+                    expiry_date=exp,
                     image_path=img,
                     barcode=bc,
                 )
@@ -251,6 +257,13 @@ class ProductsView(QWidget):
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
+
+        main_card = QFrame()
+        main_card.setObjectName("card")
+        card_inner = QVBoxLayout(main_card)
+        card_inner.setContentsMargins(16, 16, 16, 16)
+        card_inner.setSpacing(PAD_MD)
+
         head = QHBoxLayout()
         ph = QLabel("Del deactivate · selection for bulk")
         ph.setObjectName("muted")
@@ -268,7 +281,7 @@ class ProductsView(QWidget):
         ex.setCursor(Qt.PointingHandCursor)
         hb.addWidget(ex)
         head.addLayout(hb)
-        root.addLayout(head)
+        card_inner.addLayout(head)
 
         stats = QHBoxLayout()
         stats.setSpacing(16)
@@ -289,7 +302,7 @@ class ProductsView(QWidget):
             bx.addWidget(lab)
             stats.addLayout(bx)
             self._stat_labels[key] = lab
-        root.addLayout(stats)
+        card_inner.addLayout(stats)
 
         filt = QGridLayout()
         self._search = QLineEdit()
@@ -325,7 +338,7 @@ class ProductsView(QWidget):
         fa.addWidget(QPushButton("Apply", clicked=self._apply_filters))
         fa.addWidget(QPushButton("Clear", clicked=self._clear_filters))
         filt.addLayout(fa, r, 0, 1, 6)
-        root.addLayout(filt)
+        card_inner.addLayout(filt)
 
         self._bulk_frame = QWidget()
         bl = QHBoxLayout(self._bulk_frame)
@@ -338,7 +351,7 @@ class ProductsView(QWidget):
         bl.addWidget(QPushButton("Set min alert", clicked=self._bulk_min_alert))
         bl.addStretch(1)
         self._bulk_frame.setVisible(False)
-        root.addWidget(self._bulk_frame)
+        card_inner.addWidget(self._bulk_frame)
 
         self._table = QTableWidget(0, len(_TREE_COLS))
         self._table.setHorizontalHeaderLabels(list(_TABLE_HEADERS))
@@ -347,11 +360,13 @@ class ProductsView(QWidget):
         self._table.setAlternatingRowColors(True)
         self._table.itemSelectionChanged.connect(self._on_select)
         self._table.cellDoubleClicked.connect(lambda *_: self._edit_selected())
-        root.addWidget(self._table, 1)
+        card_inner.addWidget(self._table, 1)
 
         keys = QHBoxLayout()
         keys.addWidget(QLabel("Keys: Del=deactivate"))
-        root.addLayout(keys)
+        card_inner.addLayout(keys)
+
+        root.addWidget(main_card, 1)
 
         self._table.installEventFilter(self)
 
@@ -429,8 +444,8 @@ class ProductsView(QWidget):
             pid = int(p["id"])
             qty = float(p.get("quantity_in_stock") or 0)
             price = float(p.get("selling_price") or 0)
-            live = qty * price
-            exp = (p.get("expiry_date") or "") or "—"
+            ex0 = (p.get("expiry_date") or "").strip()
+            exp = format_iso_date_as_display(ex0) if ex0 else "—"
             row = self._table.rowCount()
             self._table.insertRow(row)
             vals = (
@@ -442,7 +457,6 @@ class ProductsView(QWidget):
                 format_money(price),
                 f"{qty:g}" if qty == int(qty) else f"{qty:.2f}",
                 format_money(float(p.get("cost_price") or 0)),
-                format_money(live),
                 ProductService.inventory_status_display(p),
                 exp,
             )

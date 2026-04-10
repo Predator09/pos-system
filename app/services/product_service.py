@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import shutil
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from app.database.connection import db
@@ -292,6 +292,40 @@ class ProductService:
             """
         )
         return [dict(row) for row in results]
+
+    def get_expired_active_products(self, limit: int = 12) -> list[dict]:
+        """Active products with expiry date strictly before today (need removal or markdown)."""
+        today = date.today().isoformat()
+        rows = db.fetchall(
+            """
+            SELECT * FROM products
+            WHERE is_active = 1
+              AND expiry_date IS NOT NULL AND TRIM(expiry_date) != ''
+              AND DATE(expiry_date) < DATE(?)
+            ORDER BY DATE(expiry_date) ASC, quantity_in_stock DESC
+            LIMIT ?
+            """,
+            (today, limit),
+        )
+        return [dict(r) for r in rows]
+
+    def get_expiring_soon_products(self, within_days: int = 14, limit: int = 12) -> list[dict]:
+        """Active products expiring from today through ``within_days`` (inclusive)."""
+        today = date.today().isoformat()
+        end = (date.today() + timedelta(days=within_days)).isoformat()
+        rows = db.fetchall(
+            """
+            SELECT * FROM products
+            WHERE is_active = 1
+              AND expiry_date IS NOT NULL AND TRIM(expiry_date) != ''
+              AND DATE(expiry_date) >= DATE(?)
+              AND DATE(expiry_date) <= DATE(?)
+            ORDER BY DATE(expiry_date) ASC, quantity_in_stock ASC
+            LIMIT ?
+            """,
+            (today, end, limit),
+        )
+        return [dict(r) for r in rows]
 
     def update_stock(self, product_id: int, quantity: float):
         db.execute(

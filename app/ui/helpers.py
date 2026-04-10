@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from app.config import CURRENCY_SYMBOL
+from app.ui.date_display import DISPLAY_DATETIME_FMT, format_iso_datetime_for_display
 
 
 def format_money(amount: float) -> str:
@@ -11,11 +12,11 @@ def format_money(amount: float) -> str:
 
 
 def format_purchase_timestamp(value: Any) -> str:
-    """Format receipt / purchase time for lists: always date + time when parseable."""
+    """Format receipt / purchase time for lists (date as DD-MM-YYYY when parseable)."""
     if value is None:
         return ""
     if isinstance(value, datetime):
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        return value.strftime(DISPLAY_DATETIME_FMT)
     s = str(value).strip()
     if not s:
         return ""
@@ -27,12 +28,12 @@ def format_purchase_timestamp(value: Any) -> str:
         if i >= 10:
             s = s[:i].strip()
     if len(s) >= 19 and s[10] == " ":
-        return s[:19]
+        return format_iso_datetime_for_display(s[:19])
     if len(s) == 16 and s[10] == " " and s.count(":") == 2:
-        return f"{s}:00"
+        return format_iso_datetime_for_display(f"{s}:00")
     if len(s) == 10 and s[4] == "-" and s[7] == "-":
-        return f"{s} 00:00:00"
-    return s
+        return format_iso_datetime_for_display(f"{s} 00:00:00")
+    return format_iso_datetime_for_display(s)
 
 
 def welcome_first_name(user: Mapping[str, Any] | None) -> str:

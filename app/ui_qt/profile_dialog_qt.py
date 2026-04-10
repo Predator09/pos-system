@@ -1,18 +1,23 @@
-"""Qt: signed-in user profile — name, username, optional password change."""
+"""Qt: signed-in user profile — name, username, optional password change; owners can delete a shop."""
 
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
 )
 
+from app.database.connection import db
 from app.services.auth_service import AuthService
+from app.services.shop_context import delete_shop, list_shops, shop_combo_entries
 
 
 class ProfileDialogQt(QDialog):
@@ -22,10 +27,13 @@ class ProfileDialogQt(QDialog):
         self._auth = AuthService()
         self.setWindowTitle("My profile")
         self.setModal(True)
-        self.resize(440, 420)
+        self.resize(480, 520)
 
         u = getattr(main_window, "current_user", None) or {}
         self._user_id = u.get("id")
+        self._shop_combo: QComboBox | None = None
+        self._shop_ids: list[str] = []
+        self._shop_warn: QLabel | None = None
 
         root = QVBoxLayout(self)
         hint = QLabel(
@@ -53,6 +61,42 @@ class ProfileDialogQt(QDialog):
         self._conf.setEchoMode(QLineEdit.EchoMode.Password)
         form.addRow("Confirm new password", self._conf)
 
+        if AuthService.is_owner(u):
+            sep = QFrame()
+            sep.setFrameShape(QFrame.Shape.HLine)
+            sep.setFrameShadow(QFrame.Shadow.Plain)
+            sep.setObjectName("loginFormSeparator")
+            sep.setFixedHeight(1)
+            form.addRow(sep)
+
+            admin_hdr = QLabel("<b>Shop administration (owners)</b>")
+            admin_hdr.setWordWrap(True)
+            form.addRow(admin_hdr)
+
+            admin_hint = QLabel(
+                "Delete a shop permanently (database, sales, products, backups, receipts, images). "
+                "Requires at least two shops."
+            )
+            admin_hint.setWordWrap(True)
+            admin_hint.setObjectName("muted")
+            form.addRow(admin_hint)
+
+            self._shop_combo = QComboBox()
+            self._shop_combo.setMinimumWidth(320)
+            form.addRow("Shop to remove", self._shop_combo)
+
+            self._shop_warn = QLabel("")
+            self._shop_warn.setWordWrap(True)
+            self._shop_warn.setObjectName("errorText")
+            form.addRow(self._shop_warn)
+
+            del_btn = QPushButton("Delete selected shop…")
+            del_btn.setObjectName("ghost")
+            del_btn.clicked.connect(self._on_delete_shop)
+            form.addRow("", del_btn)
+
+            self._reload_shop_list()
+
         root.addLayout(form)
 
         buttons = QDialogButtonBox(
@@ -61,6 +105,91 @@ class ProfileDialogQt(QDialog):
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+    def _reload_shop_list(self) -> None:
+        if self._shop_combo is None:
+            return
+        self._shop_combo.blockSignals(True)
+        self._shop_combo.clear()
+        shops = list_shops()
+        labels, ids = shop_combo_entries(shops)
+        self._shop_ids = ids
+        for lab in labels:
+            self._shop_combo.addItem(lab)
+        self._shop_combo.blockSignals(False)
+        if self._shop_warn is not None:
+            if len(shops) < 2:
+                self._shop_warn.setText(
+                    "Add another shop (sign out → New shop…) before you can delete one."
+                )
+            else:
+                self._shop_warn.setText("")
+
+    def _on_delete_shop(self) -> None:
+        if not AuthService.is_owner(getattr(self._main, "current_user", None)):
+            QMessageBox.warning(self, "My profile", "Only an owner can delete a shop.")
+            return
+        if self._shop_combo is None:
+            return
+
+        shops = list_shops()
+        if len(shops) < 2:
+            QMessageBox.warning(
+                self,
+                "My profile",
+                "You cannot delete the only shop. Create another shop first (sign out → New shop…).",
+            )
+            return
+
+        idx = self._shop_combo.currentIndex()
+        if idx < 0 or idx >= len(self._shop_ids):
+            return
+        shop_id = self._shop_ids[idx]
+        shop_name = self._shop_combo.currentText()
+
+        q1 = QMessageBox.question(
+            self,
+            "Delete shop",
+            f"Permanently delete “{shop_name}” and all of its data?\n\n"
+            "This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if q1 != QMessageBox.StandardButton.Yes:
+            return
+
+        q2 = QMessageBox.question(
+            self,
+            "Confirm deletion",
+            f'Click Yes only if you are sure you want to erase “{shop_name}”.',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if q2 != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            delete_shop(shop_id, db)
+        except ValueError as e:
+            QMessageBox.warning(self, "My profile", str(e))
+            return
+        except OSError as e:
+            QMessageBox.warning(
+                self,
+                "My profile",
+                f"Could not remove shop files (they may be in use):\n{e}",
+            )
+            return
+
+        if hasattr(self._main, "refresh_shop_context_ui"):
+            self._main.refresh_shop_context_ui()
+
+        self._reload_shop_list()
+        QMessageBox.information(
+            self,
+            "My profile",
+            "The shop was removed. You are now working in the remaining shop.",
+        )
 
     def _save(self) -> None:
         if self._user_id is None:
@@ -113,4 +242,3 @@ class ProfileDialogQt(QDialog):
 
         QMessageBox.information(self, "My profile", "Profile saved.")
         self.accept()
-

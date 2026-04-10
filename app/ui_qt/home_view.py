@@ -18,18 +18,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import APP_NAME, PAD_LG, PAD_MD, VERSION
-from app.services.shop_context import database_path
+from app.config import PAD_LG, PAD_MD
 from app.services.shop_settings import get_display_shop_name
 from app.database.connection import db
 from app.services.app_settings import AppSettings
 from app.services.auth_service import AuthService
 from app.services.backup_service import BackupService
 from app.services.inventory_service import InventoryService
+from app.services.product_service import ProductService
 from app.services.receipt_output import format_period_sales_summary
 from app.services.sales_service import SalesService
-from app.ui.theme_tokens import TOKENS
-
+from app.ui.date_display import format_iso_date_as_display
 from app.ui.helpers import home_welcome_detail_line, home_welcome_status_line
 from app.ui_qt.dashboard_sales_chart import DashboardSalesChart
 from app.ui_qt.helpers_qt import format_money, info_message, warning_message
@@ -43,6 +42,7 @@ class HomeView(QWidget):
         self._main = main_window
         self._sales = SalesService()
         self._inventory = InventoryService()
+        self._products = ProductService()
         self._backup = BackupService()
 
         self._overview_value: QLabel | None = None
@@ -141,7 +141,7 @@ class HomeView(QWidget):
         chart_hdr.addWidget(sum_btn)
         ov.addLayout(chart_hdr)
         self._sales_chart = DashboardSalesChart()
-        self._sales_chart.setMinimumHeight(240)
+        self._sales_chart.setMinimumHeight(260)
         ov.addWidget(self._sales_chart, 1)
 
         left_col.addWidget(overview)
@@ -205,16 +205,39 @@ class HomeView(QWidget):
         self._mini_skus = QLabel("—")
         self._mini_skus.setObjectName("donutValue")
         dl.addWidget(self._mini_skus, alignment=Qt.AlignCenter)
-        dcap = QLabel("Active SKUs")
+        dcap = QLabel("Active products")
         dcap.setObjectName("muted")
         dl.addWidget(dcap, alignment=Qt.AlignCenter)
         ll.addWidget(donut, alignment=Qt.AlignCenter)
         right_col.addWidget(self._low_card)
 
-        low_hint = QLabel("Low stock alerts use the threshold under 10 units.")
-        low_hint.setObjectName("muted")
-        low_hint.setWordWrap(True)
-        right_col.addWidget(low_hint)
+        actions = QFrame()
+        actions.setObjectName("card")
+        al = QVBoxLayout(actions)
+        al.setContentsMargins(16, 14, 16, 14)
+        al.setSpacing(8)
+        a_head = QLabel("Next moves — stock & expiry")
+        a_head.setObjectName("section")
+        al.addWidget(a_head)
+        a_sub = QLabel(
+            "Square tiles: restock (low vs minimum) and products expiring in the next 14 days. "
+            "Click a tile to open Products."
+        )
+        a_sub.setObjectName("muted")
+        a_sub.setWordWrap(True)
+        al.addWidget(a_sub)
+        self._actions_scroll = QScrollArea()
+        self._actions_scroll.setWidgetResizable(True)
+        self._actions_scroll.setFrameShape(QFrame.NoFrame)
+        self._actions_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._actions_scroll.setMaximumHeight(240)
+        self._actions_inner = QWidget()
+        self._actions_grid = QGridLayout(self._actions_inner)
+        self._actions_grid.setSpacing(10)
+        self._actions_grid.setContentsMargins(0, 4, 0, 0)
+        self._actions_scroll.setWidget(self._actions_inner)
+        al.addWidget(self._actions_scroll)
+        right_col.addWidget(actions)
 
         sess = QFrame()
         sess.setObjectName("card")
@@ -227,9 +250,6 @@ class HomeView(QWidget):
         self._welcome_label.setObjectName("pageSubtitle")
         self._welcome_label.setWordWrap(True)
         se.addWidget(self._welcome_label)
-        self._role_badge = QLabel("")
-        self._role_badge.setObjectName("pillNeutral")
-        se.addWidget(self._role_badge)
         row_dm = QHBoxLayout()
         row_dm.addWidget(QLabel("Dark mode"))
         self._appearance_check = QCheckBox()
@@ -237,9 +257,6 @@ class HomeView(QWidget):
         row_dm.addWidget(self._appearance_check)
         row_dm.addStretch(1)
         se.addLayout(row_dm)
-        self._app_info_inner = QWidget()
-        self._app_info_form = QGridLayout(self._app_info_inner)
-        se.addWidget(self._app_info_inner)
         right_col.addWidget(sess)
 
         foot = QHBoxLayout()
@@ -259,10 +276,6 @@ class HomeView(QWidget):
         self._footer_hint.setObjectName("muted")
         foot.addWidget(self._footer_hint)
         right_col.addLayout(foot)
-
-        ver = QLabel(f"{APP_NAME} v{VERSION} · {get_display_shop_name()}")
-        ver.setObjectName("muted")
-        right_col.addWidget(ver)
 
         right_col.addStretch(1)
         main_row.addLayout(right_col, 3)
@@ -288,13 +301,6 @@ class HomeView(QWidget):
             self._update_status_strip()
         except Exception as e:
             warning_message(self.window(), "Backup Error", str(e))
-
-    @staticmethod
-    def _short_path(path: str, max_len: int = 42) -> str:
-        p = str(path)
-        if len(p) <= max_len:
-            return p
-        return "…" + p[-(max_len - 1) :]
 
     @staticmethod
     def _format_delta(
@@ -408,42 +414,95 @@ class HomeView(QWidget):
         )
 
     def _latest_backup_text(self) -> str:
-        d = self._backup.backup_dir
-        if not d.exists():
-            return "Backups: folder missing"
-        files = list(d.glob("backup_*.json"))
-        if not files:
-            return "Backups: none yet"
-        latest = max(files, key=lambda p: p.stat().st_mtime)
-        return f"Latest backup: {latest.name}"
+        return "CODE10DIGITAL"
 
     def _sync_manage_users_button(self) -> None:
         self._manage_users_btn.setVisible(AuthService.is_owner(getattr(self._main, "current_user", None)))
+
+    @staticmethod
+    def _fmt_qty(q: float) -> str:
+        return f"{q:g}" if q == int(q) else f"{q:.1f}"
+
+    def _action_tile_detail(self, kind: str, product: dict) -> str:
+        qty = float(product.get("quantity_in_stock") or 0)
+        mn = float(product.get("minimum_stock_level") or 0)
+        exp = (product.get("expiry_date") or "").strip()
+        exp_d = format_iso_date_as_display(exp) if exp else ""
+        if kind == "expiring":
+            return f"{self._fmt_qty(qty)} left · {exp_d}" if exp_d else f"{self._fmt_qty(qty)} left"
+        return f"{self._fmt_qty(qty)} left · min {self._fmt_qty(mn)}"
+
+    def _make_action_tile(self, product: dict, kind: str) -> QFrame:
+        on = {"expiring": "dashboardActionTileExpiring", "low": "dashboardActionTileLow"}
+        badge = {"expiring": "Expiring", "low": "Restock"}
+        f = QFrame()
+        f.setObjectName(on[kind])
+        f.setFixedSize(108, 108)
+        f.setCursor(Qt.CursorShape.PointingHandCursor)
+        f.setProperty("dashboardProductId", int(product["id"]))
+        f.installEventFilter(self)
+        vl = QVBoxLayout(f)
+        vl.setContentsMargins(8, 8, 8, 8)
+        vl.setSpacing(2)
+        b = QLabel(badge[kind])
+        b.setObjectName("dashboardActionBadge")
+        raw_name = (product.get("name") or product.get("code") or "?").strip()
+        nm = QLabel(raw_name[:44] + ("…" if len(raw_name) > 44 else ""))
+        nm.setWordWrap(True)
+        nm.setObjectName("dashboardActionName")
+        detail = QLabel(self._action_tile_detail(kind, product))
+        detail.setObjectName("muted")
+        detail.setWordWrap(True)
+        vl.addWidget(b)
+        vl.addWidget(nm, 1)
+        vl.addWidget(detail)
+        return f
+
+    def _rebuild_action_grid(self) -> None:
+        while self._actions_grid.count():
+            item = self._actions_grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        expiring = self._products.get_expiring_soon_products(14, 8)
+        low = self._products.get_low_stock()[:12]
+        seen: set[int] = set()
+        tiles: list[tuple[dict, str]] = []
+        for p in expiring:
+            pid = int(p["id"])
+            if pid in seen:
+                continue
+            seen.add(pid)
+            tiles.append((p, "expiring"))
+        for p in low:
+            pid = int(p["id"])
+            if pid in seen:
+                continue
+            seen.add(pid)
+            tiles.append((p, "low"))
+
+        tiles = tiles[:12]
+        if not tiles:
+            empty = QLabel("No restock or expiry alerts — you're in good shape.")
+            empty.setObjectName("muted")
+            empty.setWordWrap(True)
+            self._actions_grid.addWidget(empty, 0, 0, 1, 3)
+            return
+
+        cols = 3
+        for i, (p, kind) in enumerate(tiles):
+            self._actions_grid.addWidget(self._make_action_tile(p, kind), i // cols, i % cols)
+
+    def _open_products_for_action(self, _product_id: int) -> None:
+        mw = self._main
+        if hasattr(mw, "show_screen"):
+            mw.show_screen("products")
 
     def _update_welcome_and_info(self) -> None:
         u = getattr(self._main, "current_user", None) or {}
         shop = get_display_shop_name()
         self._welcome_label.setText(home_welcome_detail_line(u, shop))
-        role = (u.get("role") or "staff").title()
-        self._role_badge.setText(f"  {role}  ")
-
-        while self._app_info_form.count():
-            item = self._app_info_form.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-
-        db_display = self._short_path(str(database_path()))
-        info_rows = [
-            ("App", f"{APP_NAME} v{VERSION}"),
-            ("Database", db_display),
-            ("User", u.get("username", "—")),
-            ("Role", role),
-            ("Brand primary", TOKENS.PRIMARY),
-        ]
-        for i, (lab, val) in enumerate(info_rows):
-            self._app_info_form.addWidget(QLabel(f"{lab}:"), i, 0, Qt.AlignTop)
-            self._app_info_form.addWidget(QLabel(str(val)), i, 1, Qt.AlignTop)
 
     def _update_status_strip(self) -> None:
         db_lbl = self._status_labels["db"]
@@ -533,6 +592,14 @@ class HomeView(QWidget):
                         return super().eventFilter(obj, event)
                     self._preview_recent_checkout(sid_i)
                     return True
+                dp = obj.property("dashboardProductId")
+                if dp is not None:
+                    try:
+                        dpi = int(dp)
+                    except (TypeError, ValueError):
+                        return super().eventFilter(obj, event)
+                    self._open_products_for_action(dpi)
+                    return True
         return super().eventFilter(obj, event)
 
     def _preview_recent_checkout(self, sale_id: int) -> None:
@@ -606,6 +673,7 @@ class HomeView(QWidget):
 
             recent = self._sales.get_recent_sales(5)
             self._rebuild_recent_list(recent)
+            self._rebuild_action_grid()
 
             self._footer_hint.setText(f"Updated {datetime.now().strftime('%H:%M')}")
         except Exception as e:
@@ -618,4 +686,8 @@ class HomeView(QWidget):
                     lab.setText("—")
             if getattr(self, "_sales_chart", None) is not None:
                 self._sales_chart.set_data([], "")
+            try:
+                self._rebuild_action_grid()
+            except Exception:
+                pass
             self._footer_hint.setText(f"Could not load stats: {str(e)[:48]}")

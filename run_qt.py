@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Same as run.py — PySide6 UI (kept for existing scripts and habits)."""
+"""Same as run.py — SmartStock PySide6 UI (kept for existing scripts and habits)."""
 
 import sys
 from pathlib import Path

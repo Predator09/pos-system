@@ -19,10 +19,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app.database.connection as connmod
-from app.config import DATABASE_PATH
 from app.database.connection import DatabaseConnection
 from app.database.migrations import DatabaseMigrations
 from app.services import auth_service
+from app.services.shop_context import database_path
 
 
 def _unlink_with_retry(path: Path, attempts: int = 8, delay: float = 0.35) -> None:
@@ -36,7 +36,7 @@ def _unlink_with_retry(path: Path, attempts: int = 8, delay: float = 0.35) -> No
             last_err = e
             time.sleep(delay)
     raise PermissionError(
-        f"Could not delete {path}. Close the POS app (and any DB browser) using this file, then run again."
+        f"Could not delete {path}. Close SmartStock (and any DB browser) using this file, then run again."
     ) from last_err
 
 
@@ -51,7 +51,7 @@ def _remove_sqlite_files(db_path: Path) -> None:
 
 
 def main() -> None:
-    db_path = Path(DATABASE_PATH)
+    db_path = database_path()
 
     if connmod.db.connection is not None:
         connmod.db.close()
@@ -63,7 +63,7 @@ def main() -> None:
         print(f"No database file at {db_path} — will create a new one.")
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    dbc = DatabaseConnection(str(db_path))
+    dbc = DatabaseConnection()
     DatabaseMigrations(dbc).init_database()
     dbc.connect()
 
@@ -82,7 +82,7 @@ def main() -> None:
         )
 
     dbc.close()
-    connmod.db = DatabaseConnection(str(db_path))
+    connmod.db = DatabaseConnection()
 
     print("Done. Database rebuilt with all migrations.")
     print("Sign in with:  username  admin   password  admin")

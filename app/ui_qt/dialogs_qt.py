@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.services.receipt_output import archive_receipt_file, format_receipt_plaintext, print_receipt
+from app.ui.date_display import format_iso_date_as_display
 from app.services.shop_settings import ShopSettings
 from app.ui_qt.helpers_qt import format_money, info_message, warning_message
 
@@ -70,7 +71,7 @@ class PickProductDialogQt(QDialog):
             sku = p.get("code", "") or ""
             bc = (p.get("barcode") or "").strip()
             extra = f" · {bc}" if bc else ""
-            line = f"{p.get('name', '')} — SKU {sku}{extra} — {format_money(float(p.get('selling_price', 0)))}"
+            line = f"{p.get('name', '')} — PC {sku}{extra} — {format_money(float(p.get('selling_price', 0)))}"
             self._list.addItem(line)
 
     def _ok(self) -> None:
@@ -87,7 +88,9 @@ class PeriodSalesSummaryDialogQt(QDialog):
 
     def __init__(self, parent, start_date: str, end_date: str, body: str):
         super().__init__(parent)
-        self.setWindowTitle(f"Period summary · {start_date} — {end_date}")
+        sd = format_iso_date_as_display(str(start_date or "")[:10])
+        ed = format_iso_date_as_display(str(end_date or "")[:10])
+        self.setWindowTitle(f"Period summary · {sd} — {ed}")
         self.setModal(True)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.resize(420, 480)

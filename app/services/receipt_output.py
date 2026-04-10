@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape
 
 from app.config import CURRENCY_SYMBOL, RECEIPT_PRINT_COMMAND
 from app.services.shop_context import receipts_dir
+from app.ui.date_display import format_iso_date_as_display, format_iso_datetime_for_display
 from app.services.shop_settings import ShopSettings, get_display_shop_name
 
 
@@ -30,10 +31,12 @@ def format_receipt_plaintext(
     lines: list[str] = []
     if include_shop_banner:
         lines.extend([name.center(40), "=" * 40])
+    raw_dt = str(sale.get("sale_date") or "").strip()
+    date_line = format_iso_datetime_for_display(raw_dt) if raw_dt else ""
     lines.extend(
         [
             f"Invoice: {sale.get('invoice_number', '')}",
-            f"Date: {sale.get('sale_date', '')}",
+            f"Date: {date_line}",
         ]
     )
     staff = (sale.get("cashier_name") or "").strip()
@@ -78,13 +81,15 @@ def format_period_sales_summary(
 ) -> str:
     """Receipt-style text for aggregated sales over an inclusive date range (not one invoice)."""
     name = shop_name if shop_name is not None else get_display_shop_name()
+    s_disp = format_iso_date_as_display(str(start_date or "")[:10])
+    e_disp = format_iso_date_as_display(str(end_date or "")[:10])
     lines: list[str] = [
         name.center(40),
         "=" * 40,
         "PERIOD SUMMARY",
         "",
-        f"From: {start_date}",
-        f"To:   {end_date}",
+        f"From: {s_disp}",
+        f"To:   {e_disp}",
         "",
         f"Invoices: {invoice_count}",
         "",

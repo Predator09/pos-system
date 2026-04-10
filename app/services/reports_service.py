@@ -8,10 +8,11 @@ from datetime import date
 from pathlib import Path
 
 from app.database.connection import db
+from app.ui.date_display import DISPLAY_DATE_FMT, format_iso_date_as_display, parse_date_input
 
 
 def format_sales_calendar_day(iso_day: str | None) -> str:
-    """Turn ``YYYY-MM-DD`` into a full calendar line, e.g. ``Sunday, 5 April 2026``."""
+    """Turn ``YYYY-MM-DD`` into a weekday line with ``DD-MM-YYYY`` (day first)."""
     raw = str(iso_day or "").strip()[:10]
     if len(raw) != 10:
         return str(iso_day or "").strip() or "—"
@@ -19,7 +20,7 @@ def format_sales_calendar_day(iso_day: str | None) -> str:
         d = date.fromisoformat(raw)
     except ValueError:
         return str(iso_day or "")
-    return f"{d.strftime('%A')}, {d.day} {d.strftime('%B')} {d.year}"
+    return f"{d.strftime('%A')}, {d.strftime(DISPLAY_DATE_FMT)}"
 
 
 def format_report_period_title(start_iso: str, end_iso: str) -> str:
@@ -29,18 +30,13 @@ def format_report_period_title(start_iso: str, end_iso: str) -> str:
     if len(a) != 10 or len(b) != 10:
         return f"{start_iso} – {end_iso}".strip(" –") or "—"
 
-    def _short(d: date) -> str:
-        return f"{d.day} {d.strftime('%b')}"
-
     if a == b:
         return format_sales_calendar_day(a)
     try:
         da, db = date.fromisoformat(a), date.fromisoformat(b)
     except ValueError:
-        return f"{a} – {b}"
-    if da.year == db.year:
-        return f"{_short(da)} – {_short(db)} {db.year}"
-    return f"{_short(da)} {da.year} – {_short(db)} {db.year}"
+        return f"{format_iso_date_as_display(a)} – {format_iso_date_as_display(b)}"
+    return f"{da.strftime(DISPLAY_DATE_FMT)} – {db.strftime(DISPLAY_DATE_FMT)}"
 
 
 class ReportsService:
@@ -48,11 +44,7 @@ class ReportsService:
 
     @staticmethod
     def _validate_iso(d: str) -> str:
-        s = (d or "").strip()
-        if len(s) != 10:
-            raise ValueError("Use date format YYYY-MM-DD.")
-        date.fromisoformat(s)
-        return s
+        return parse_date_input(d)
 
     def sales_summary(self, start_date: str, end_date: str) -> dict:
         """Aggregate sales in inclusive date range (on ``sale_date``)."""

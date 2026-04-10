@@ -8,10 +8,13 @@ from collections import Counter
 import shutil
 from pathlib import Path
 
-SHOPS_ROOT = Path("data/shops")
-LAST_SHOP_FILE = Path("data/last_shop.json")
+from app.runtime_paths import get_data_dir
+
+_DATA_ROOT = get_data_dir()
+SHOPS_ROOT = _DATA_ROOT / "shops"
+LAST_SHOP_FILE = _DATA_ROOT / "last_shop.json"
 DEFAULT_SHOP_ID = "main"
-LEGACY_DB = Path("data/pos_system.db")
+LEGACY_DB = _DATA_ROOT / "pos_system.db"
 
 _current_shop_id: str = DEFAULT_SHOP_ID
 
@@ -38,11 +41,11 @@ def ensure_legacy_migrated() -> None:
     if LEGACY_DB.is_file() and not main_db.is_file():
         main_root.mkdir(parents=True, exist_ok=True)
         shutil.move(str(LEGACY_DB), str(main_db))
-        legacy_settings = Path("data/shop_settings.json")
+        legacy_settings = _DATA_ROOT / "shop_settings.json"
         if legacy_settings.is_file():
             shutil.move(str(legacy_settings), str(main_root / "shop_settings.json"))
         for folder in ("shop", "product_images", "receipts", "backups"):
-            p = Path("data") / folder
+            p = _DATA_ROOT / folder
             dest = main_root / folder
             if p.is_dir() and not dest.exists():
                 try:
@@ -193,3 +196,30 @@ def open_shop_database(db, shop_id: str) -> None:
     db.reconfigure(str(database_path()))
     DatabaseMigrations(db).init_database()
     db.connect()
+
+
+def delete_shop(shop_id: str, db) -> str:
+    """Permanently remove a shop directory (database, images, backups, receipts).
+
+    Requires at least two shops. If ``shop_id`` is the active shop, closes the DB,
+    switches to another shop, reconnects, then removes the old folder.
+
+    Returns the active shop id after the operation.
+    """
+    ensure_legacy_migrated()
+    shops = [s["id"] for s in list_shops()]
+    if shop_id not in shops:
+        raise ValueError("That shop does not exist.")
+    if len(shops) < 2:
+        raise ValueError("You cannot delete the only shop.")
+
+    root = SHOPS_ROOT / shop_id
+    if shop_id == get_current_shop_id():
+        alt = next(sid for sid in shops if sid != shop_id)
+        db.close()
+        open_shop_database(db, alt)
+
+    if root.is_dir():
+        shutil.rmtree(root)
+
+    return get_current_shop_id()

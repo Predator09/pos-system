@@ -112,7 +112,7 @@ class MainQtWindow(QMainWindow):
             return
         key = _NAV[row][1]
         if key == "home":
-            self._page_subtitle.setText(date.today().strftime("%d %B, %Y"))
+            self._page_subtitle.setText(date.today().strftime("%d-%m-%Y"))
 
     def _refresh_footer_text(self) -> None:
         if self._footer_text_label is not None:
@@ -149,14 +149,13 @@ class MainQtWindow(QMainWindow):
             raw = (u.get("full_name") or u.get("username") or "?").strip()
             ch = raw[0].upper() if raw else "?"
             self._avatar.setText(ch)
-
     def _update_top_bar(self, screen_key: str) -> None:
         if self._page_title is None or self._page_subtitle is None:
             return
         title, sub = _TOP_BAR_META.get(screen_key, ("", ""))
         self._page_title.setText(title)
         if screen_key == "home":
-            self._page_subtitle.setText(date.today().strftime("%d %B, %Y"))
+            self._page_subtitle.setText(date.today().strftime("%d-%m-%Y"))
         elif screen_key == "sales":
             self._page_subtitle.setText(f"{get_display_shop_name()} · Register")
         else:
@@ -189,7 +188,7 @@ class MainQtWindow(QMainWindow):
         self._brand_name_label = QLabel(get_display_shop_name())
         self._brand_name_label.setObjectName("sidebarBrandName")
         brand_txt.addWidget(self._brand_name_label)
-        bt = QLabel("POS · Inventory")
+        bt = QLabel("SmartStock")
         bt.setObjectName("sidebarBrandTag")
         brand_txt.addWidget(bt)
         brand_row.addLayout(brand_txt, 1)
@@ -241,7 +240,7 @@ class MainQtWindow(QMainWindow):
 
         self._global_search = QLineEdit()
         self._global_search.setObjectName("globalSearch")
-        self._global_search.setPlaceholderText("Search products, SKU, invoices…")
+        self._global_search.setPlaceholderText("Search products, PC, invoices…")
         self._global_search.setClearButtonEnabled(True)
         self._global_search.setMinimumWidth(280)
         self._global_search.setMaximumWidth(400)
@@ -252,7 +251,7 @@ class MainQtWindow(QMainWindow):
         bell.setObjectName("iconButton")
         bell.setCursor(Qt.PointingHandCursor)
         bell.setFixedSize(42, 42)
-        bell.setToolTip("Low-stock summary (at or below each SKU minimum)")
+        bell.setToolTip("Low-stock summary (at or below each product’s minimum)")
         bell.clicked.connect(self._on_bell_alerts)
         top_layout.addWidget(bell)
 
@@ -350,6 +349,21 @@ class MainQtWindow(QMainWindow):
 
     def _open_my_profile(self) -> None:
         ProfileDialogQt(self, self).exec()
+
+    def refresh_shop_context_ui(self) -> None:
+        """After switching or deleting a shop: refresh chrome and all screens."""
+        if self._sidebar_logo is not None:
+            self._sidebar_logo.refresh()
+        if self._brand_name_label is not None:
+            self._brand_name_label.setText(get_display_shop_name())
+        self._refresh_footer_text()
+        row = self._nav_list.currentRow() if self._nav_list is not None else 0
+        if row < 0 or row >= len(_NAV):
+            row = 0
+        self._update_top_bar(_NAV[row][1])
+        for screen in self._screens.values():
+            if hasattr(screen, "refresh"):
+                screen.refresh()
 
     def _on_global_search_submit(self) -> None:
         if self._shell is None or self._global_search is None:

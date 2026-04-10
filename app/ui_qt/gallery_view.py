@@ -131,6 +131,10 @@ class GalleryView(QWidget):
         bar.addStretch(1)
         root.addLayout(bar)
 
+        grid_card = QFrame()
+        grid_card.setObjectName("card")
+        grid_lay = QVBoxLayout(grid_card)
+        grid_lay.setContentsMargins(12, 12, 12, 12)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -138,7 +142,8 @@ class GalleryView(QWidget):
         self._grid = QGridLayout(self._inner)
         self._grid.setSpacing(12)
         scroll.setWidget(self._inner)
-        root.addWidget(scroll, 1)
+        grid_lay.addWidget(scroll, 1)
+        root.addWidget(grid_card, 1)
 
         self._cols = 4
 
@@ -214,7 +219,7 @@ class GalleryView(QWidget):
         return pm.scaled(_THUMB, _THUMB, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
     def apply_global_search(self, text: str) -> None:
-        """Top-bar search: open gallery with name/SKU filter prefilled."""
+        """Top-bar search: open gallery with name/PC filter prefilled."""
         self._search.setText(text)
         self.refresh()
 

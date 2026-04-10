@@ -1,0 +1,2 @@
+# Optional: build a Windows folder distribution (see README).
+pyinstaller>=6.3,<7

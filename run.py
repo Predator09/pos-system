@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""POS System — PySide6 desktop UI."""
+"""SmartStock — PySide6 desktop UI."""
 
 import sys
 from pathlib import Path

@@ -1,8 +1,13 @@
-"""One-time installation code on each machine (same value as Inno Setup INSTALL_CODE)."""
+"""Installation code gate: first run and periodic re-verification (same secret as Inno Setup)."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal
 
 from PySide6.QtWidgets import (
     QDialog,
@@ -14,7 +19,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.config import INSTALL_CODE_REQUIRED
+from app.config import (
+    INSTALL_CODE_REQUIRED,
+    INSTALL_CODE_REQUIRED_SHA256,
+    INSTALL_CODE_REVERIFY_INTERVAL_DAYS,
+)
 from app.runtime_paths import get_data_dir
 
 
@@ -22,31 +31,78 @@ def _marker_path() -> Path:
     return get_data_dir() / ".install_verified"
 
 
-def is_install_verified() -> bool:
-    return _marker_path().is_file()
+def _code_is_valid(got: str) -> bool:
+    value = (got or "").strip()
+    expected_hash = (INSTALL_CODE_REQUIRED_SHA256 or "").strip().lower()
+    if expected_hash:
+        got_hash = hashlib.sha256(value.encode("utf-8")).hexdigest().lower()
+        return hmac.compare_digest(got_hash, expected_hash)
+    expected = (INSTALL_CODE_REQUIRED or "").strip()
+    return hmac.compare_digest(value, expected)
 
 
-def _write_marker() -> None:
+def _read_last_verified_utc() -> datetime | None:
+    """Return last successful verification time, or None if never verified."""
+    p = _marker_path()
+    if not p.is_file():
+        return None
+    raw = p.read_text(encoding="utf-8").strip()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict) and "verified_at" in data:
+            s = data["verified_at"]
+            if isinstance(s, str):
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    # Legacy: file contained plain "1" (or unreadable content) — treat file mtime as verification time.
+    try:
+        return datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return None
+
+
+def _write_verified_at(when: datetime) -> None:
     p = _marker_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("1", encoding="utf-8")
+    utc = when.astimezone(timezone.utc)
+    payload = {"verified_at": utc.isoformat()}
+    p.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
 
 
-def ensure_first_run_install_code(parent=None) -> bool:
-    """If this PC has not been verified yet, prompt once; return False if user cancels."""
-    if is_install_verified():
+def _needs_reverification(last: datetime | None) -> bool:
+    if last is None:
         return True
+    now = datetime.now(timezone.utc)
+    return now - last >= timedelta(days=INSTALL_CODE_REVERIFY_INTERVAL_DAYS)
 
+
+def _prompt_install_code(
+    parent,
+    reason: Literal["first", "reverify"],
+) -> bool:
     dlg = QDialog(parent)
     dlg.setWindowTitle("SmartStock")
     dlg.setModal(True)
     root = QVBoxLayout(dlg)
-    root.addWidget(
-        QLabel(
+
+    if reason == "first":
+        intro = (
             "Enter the installation code.\n"
             "This is required once on this computer (including when using the portable folder)."
         )
-    )
+    else:
+        intro = (
+            f"It has been {INSTALL_CODE_REVERIFY_INTERVAL_DAYS} days since the last verification.\n"
+            "Enter your installation code to continue using SmartStock."
+        )
+    root.addWidget(QLabel(intro))
+
     edit = QLineEdit()
     edit.setPlaceholderText("Installation code")
     edit.setMinimumWidth(360)
@@ -58,18 +114,34 @@ def ensure_first_run_install_code(parent=None) -> bool:
     buttons.rejected.connect(dlg.reject)
     root.addWidget(buttons)
 
-    want = (INSTALL_CODE_REQUIRED or "").strip()
     while True:
         edit.clear()
         edit.setFocus()
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return False
         got = edit.text().strip()
-        if got == want:
-            _write_marker()
+        if _code_is_valid(got):
+            _write_verified_at(datetime.now(timezone.utc))
             return True
         QMessageBox.warning(
             dlg,
             "Invalid code",
             "That code is not valid. Check with your vendor and try again.",
         )
+
+
+def ensure_install_code(parent=None) -> bool:
+    """
+    Block startup until the install code is accepted (first run or after the re-verification interval).
+    Returns False if the user cancels.
+    """
+    last = _read_last_verified_utc()
+    if not _needs_reverification(last):
+        return True
+    reason: Literal["first", "reverify"] = "first" if last is None else "reverify"
+    return _prompt_install_code(parent, reason)
+
+
+def ensure_first_run_install_code(parent=None) -> bool:
+    """Backward-compatible name for :func:`ensure_install_code`."""
+    return ensure_install_code(parent)

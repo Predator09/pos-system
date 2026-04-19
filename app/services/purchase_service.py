@@ -7,6 +7,8 @@ from datetime import datetime
 
 from app.database.connection import db
 from app.database.sync import SyncOperation, SyncTracker
+from app.services.app_logging import log_exception
+from app.services.audit_service import AuditService
 
 
 class PurchaseService:
@@ -14,6 +16,7 @@ class PurchaseService:
 
     def __init__(self):
         self.sync = SyncTracker(db)
+        self.audit = AuditService()
 
     @staticmethod
     def _generate_reference() -> str:
@@ -116,6 +119,7 @@ class PurchaseService:
             conn.commit()
         except Exception:
             conn.rollback()
+            log_exception("Failed to receive purchase receipt", reference=reference)
             raise
 
         total_value = sum(q * c for _pid, q, c in cleaned)
@@ -124,6 +128,18 @@ class PurchaseService:
             self.sync.log_change("purchases", lid, SyncOperation.CREATE)
         for pid in {p for p, _q, _c in cleaned}:
             self.sync.log_change("products", pid, SyncOperation.UPDATE)
+            self.audit.record(
+                event_type="stock_changed",
+                entity_type="product",
+                entity_id=pid,
+                details={"reason": "purchase_receipt", "receipt_id": receipt_id},
+            )
+        self.audit.record(
+            event_type="purchase_receipt_recorded",
+            entity_type="purchase_receipt",
+            entity_id=receipt_id,
+            details={"reference": reference, "line_count": len(line_ids), "total_value": round(total_value, 2)},
+        )
 
         return {
             "receipt_id": receipt_id,
@@ -147,6 +163,21 @@ class PurchaseService:
             (limit,),
         )
         return [dict(r) for r in rows]
+
+    def get_receipt(self, receipt_id: int) -> dict | None:
+        """Header row for one goods receipt, with line_count and total_value (same shape as list_recent_receipts)."""
+        row = db.fetchone(
+            """
+            SELECT r.*,
+              (SELECT COUNT(*) FROM purchases p WHERE p.receipt_id = r.id) AS line_count,
+              (SELECT COALESCE(SUM(p.quantity * p.cost_price), 0)
+                 FROM purchases p WHERE p.receipt_id = r.id) AS total_value
+            FROM purchase_receipts r
+            WHERE r.id = ?
+            """,
+            (receipt_id,),
+        )
+        return dict(row) if row else None
 
     def get_receipt_lines(self, receipt_id: int) -> list[dict]:
         rows = db.fetchall(

@@ -26,6 +26,7 @@ from app.services.product_service import ProductService
 from app.ui.theme_tokens import TOKENS
 
 from app.ui_qt.helpers_qt import format_money, warning_message
+from app.ui_qt.icon_utils import set_button_icon
 from app.ui_qt.products_view import ProductEditorDialogQt
 
 _THUMB = 132
@@ -105,10 +106,12 @@ class GalleryView(QWidget):
         add_b.setObjectName("primary")
         add_b.setCursor(Qt.PointingHandCursor)
         add_b.clicked.connect(self._add_product)
+        set_button_icon(add_b, "fa5s.plus-circle")
         act.addWidget(add_b)
         inv_b = QPushButton("Products & inventory")
         inv_b.setCursor(Qt.PointingHandCursor)
         inv_b.clicked.connect(self._open_products)
+        set_button_icon(inv_b, "fa5s.boxes")
         act.addWidget(inv_b)
         act.addStretch(1)
         root.addLayout(act)
@@ -127,6 +130,7 @@ class GalleryView(QWidget):
         ap.setObjectName("primary")
         ap.setCursor(Qt.PointingHandCursor)
         ap.clicked.connect(self.refresh)
+        set_button_icon(ap, "fa5s.check")
         bar.addWidget(ap)
         bar.addStretch(1)
         root.addLayout(bar)

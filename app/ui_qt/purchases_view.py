@@ -20,14 +20,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import PAD_MD
+from app.config import PAD_LG, PAD_MD, PAD_SM
 from app.services.product_service import ProductService
 from app.services.purchase_service import PurchaseService
 from app.services.supplier_service import SupplierService
 
 from app.ui.helpers import format_purchase_timestamp
-from app.ui_qt.dialogs_qt import PickProductDialogQt
+from app.ui_qt.dialogs_qt import PickProductDialogQt, PurchaseReceiptDetailDialogQt
 from app.ui_qt.helpers_qt import format_money, info_message, warning_message
+from app.ui_qt.icon_utils import set_button_icon
 from app.ui_qt.supplier_editor_qt import SupplierEditorDialogQt
 
 _LINE_COLS = ("code", "name", "qty", "ucost", "total")
@@ -66,7 +67,8 @@ class PurchasesView(QWidget):
         dir_card = QFrame()
         dir_card.setObjectName("card")
         dv = QVBoxLayout(dir_card)
-        dv.setContentsMargins(16, 14, 16, 14)
+        dv.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
+        dv.setSpacing(PAD_SM)
         dv.addWidget(QLabel("Registered suppliers (for future reference & quick fill)"))
         self._supplier_dir = QTableWidget(0, len(_SUP_DIR_COLS))
         self._supplier_dir.setHorizontalHeaderLabels(["Name", "Phone", "Email"])
@@ -81,23 +83,28 @@ class PurchasesView(QWidget):
         dv.addWidget(self._supplier_dir)
 
         dbtn = QHBoxLayout()
+        dbtn.setSpacing(PAD_SM)
         nb = QPushButton("New supplier")
         nb.setCursor(Qt.PointingHandCursor)
         nb.clicked.connect(self._new_supplier)
+        set_button_icon(nb, "fa5s.user-plus")
         dbtn.addWidget(nb)
         eb = QPushButton("Edit selected")
         eb.setObjectName("ghost")
         eb.setCursor(Qt.PointingHandCursor)
         eb.clicked.connect(self._edit_supplier)
+        set_button_icon(eb, "fa5s.user-edit")
         dbtn.addWidget(eb)
         ub = QPushButton("Use for this receipt")
         ub.setCursor(Qt.PointingHandCursor)
         ub.clicked.connect(self._apply_selected_supplier_to_form)
+        set_button_icon(ub, "fa5s.check-circle")
         dbtn.addWidget(ub)
         rb = QPushButton("Refresh list")
         rb.setObjectName("ghost")
         rb.setCursor(Qt.PointingHandCursor)
         rb.clicked.connect(lambda: self._reload_suppliers(preserve_pick=False))
+        set_button_icon(rb, "fa5s.sync")
         dbtn.addWidget(rb)
         dbtn.addStretch(1)
         dv.addLayout(dbtn)
@@ -106,7 +113,9 @@ class PurchasesView(QWidget):
         hdr = QFrame()
         hdr.setObjectName("card")
         hl = QGridLayout(hdr)
-        hl.setContentsMargins(16, 14, 16, 14)
+        hl.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
+        hl.setHorizontalSpacing(PAD_SM)
+        hl.setVerticalSpacing(PAD_SM)
         hl.addWidget(QLabel("Quick pick"), 0, 0)
         self._supplier_combo = QComboBox()
         self._supplier_combo.setMinimumWidth(320)
@@ -136,7 +145,8 @@ class PurchasesView(QWidget):
         add_card = QFrame()
         add_card.setObjectName("card")
         al = QHBoxLayout(add_card)
-        al.setContentsMargins(16, 14, 16, 14)
+        al.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
+        al.setSpacing(PAD_SM)
         al.addWidget(QLabel("Qty"))
         self._qty = QLineEdit("1")
         self._qty.setFixedWidth(72)
@@ -148,16 +158,19 @@ class PurchasesView(QWidget):
         pp = QPushButton("Pick product…")
         pp.setCursor(Qt.PointingHandCursor)
         pp.clicked.connect(self._pick_product)
+        set_button_icon(pp, "fa5s.search")
         al.addWidget(pp)
         ad = QPushButton("Add line")
         ad.setObjectName("primary")
         ad.setCursor(Qt.PointingHandCursor)
         ad.clicked.connect(self._add_line)
+        set_button_icon(ad, "fa5s.plus")
         al.addWidget(ad)
         rm = QPushButton("Remove selected")
         rm.setObjectName("ghost")
         rm.setCursor(Qt.PointingHandCursor)
         rm.clicked.connect(self._remove_line)
+        set_button_icon(rm, "fa5s.trash-alt")
         al.addWidget(rm)
         al.addStretch(1)
         self._draft_lbl = QLabel("Draft total: " + format_money(0))
@@ -172,26 +185,31 @@ class PurchasesView(QWidget):
         root.addWidget(self._line_table, 1)
 
         act = QHBoxLayout()
+        act.setSpacing(PAD_SM)
         post = QPushButton("Purchase")
         post.setObjectName("primary")
         post.setCursor(Qt.PointingHandCursor)
         post.clicked.connect(self._post_receipt)
+        set_button_icon(post, "fa5s.shopping-basket")
         act.addWidget(post)
         clr = QPushButton("Clear draft")
         clr.setObjectName("ghost")
         clr.setCursor(Qt.PointingHandCursor)
         clr.clicked.connect(self._clear_draft)
+        set_button_icon(clr, "fa5s.broom")
         act.addWidget(clr)
         act.addStretch(1)
         root.addLayout(act)
 
-        root.addWidget(QLabel("Recent purchases"))
+        root.addWidget(QLabel("Recent purchases (double-click a row for line details)"))
         self._hist_table = QTableWidget(0, len(_HIST_COLS))
         self._hist_table.setHorizontalHeaderLabels(
             ["Reference", "Date & time", "Supplier", "Phone", "Email", "Lines", "Value"]
         )
         self._hist_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self._hist_table.setSelectionMode(QTableWidget.SingleSelection)
         self._hist_table.setColumnWidth(1, 168)
+        self._hist_table.doubleClicked.connect(lambda *_: self._open_hist_receipt_detail())
         root.addWidget(self._hist_table, 1)
 
     def _on_supplier_field_edited(self, *_args) -> None:
@@ -412,6 +430,18 @@ class PurchasesView(QWidget):
                 self._line_table.setItem(i, c, it)
         self._draft_lbl.setText("Draft total: " + format_money(total))
 
+    def _open_hist_receipt_detail(self) -> None:
+        r = self._hist_table.currentRow()
+        if r < 0:
+            return
+        it = self._hist_table.item(r, 0)
+        if it is None:
+            return
+        rid = it.data(Qt.ItemDataRole.UserRole)
+        if rid is None:
+            return
+        PurchaseReceiptDetailDialogQt(self.window(), self._purchases, int(rid)).exec()
+
     def _clear_draft(self) -> None:
         self._lines.clear()
         self._filling_supplier_fields = True
@@ -480,4 +510,6 @@ class PurchasesView(QWidget):
             for c, val in enumerate(vals):
                 it = QTableWidgetItem(str(val))
                 it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                if c == 0:
+                    it.setData(Qt.ItemDataRole.UserRole, int(r["id"]))
                 self._hist_table.setItem(i, c, it)

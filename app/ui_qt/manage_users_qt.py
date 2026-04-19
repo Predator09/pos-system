@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from app.services.auth_service import AuthService
 
+from app.ui_qt.icon_utils import set_button_icon, style_dialog_button_box
 from app.ui_qt.helpers_qt import info_message, warning_message
 
 
@@ -43,11 +44,20 @@ class ManageUsersDialogQt(QDialog):
         v.addWidget(self._tree, 1)
 
         row = QHBoxLayout()
-        row.addWidget(QPushButton("Add user…", clicked=self._add_user))
-        row.addWidget(QPushButton("Edit…", clicked=self._edit_selected))
-        row.addWidget(QPushButton("Set password…", clicked=self._set_password))
+        add_btn = QPushButton("Add user…", clicked=self._add_user)
+        edit_btn = QPushButton("Edit…", clicked=self._edit_selected)
+        pass_btn = QPushButton("Set password…", clicked=self._set_password)
+        set_button_icon(add_btn, "fa5s.user-plus")
+        set_button_icon(edit_btn, "fa5s.user-edit")
+        set_button_icon(pass_btn, "fa5s.key")
+        row.addWidget(add_btn)
+        row.addWidget(edit_btn)
+        row.addWidget(pass_btn)
         row.addStretch(1)
-        row.addWidget(QPushButton("Close", clicked=self.accept))
+        close_btn = QPushButton("Close", clicked=self.accept)
+        close_btn.setObjectName("ghost")
+        set_button_icon(close_btn, "fa5s.times")
+        row.addWidget(close_btn)
         v.addLayout(row)
 
         self._reload_table()
@@ -120,6 +130,7 @@ class ManageUsersDialogQt(QDialog):
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(save)
         bb.rejected.connect(d.reject)
+        style_dialog_button_box(bb, ok_icon="fa5s.user-plus")
         f.addRow(bb)
         d.exec()
 
@@ -170,6 +181,7 @@ class ManageUsersDialogQt(QDialog):
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(save)
         bb.rejected.connect(d.reject)
+        style_dialog_button_box(bb, ok_icon="fa5s.save")
         f.addRow(bb)
         d.exec()
 
@@ -211,5 +223,6 @@ class ManageUsersDialogQt(QDialog):
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(save)
         bb.rejected.connect(d.reject)
+        style_dialog_button_box(bb, ok_icon="fa5s.key")
         f.addRow(bb)
         d.exec()

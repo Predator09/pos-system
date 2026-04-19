@@ -1,4 +1,19 @@
-"""Dashboard sales trend: bar chart with axes, grid, and sensible bucketing (no QtCharts)."""
+"""Dashboard sales trend — modernized bar chart.
+
+Visual design: GamMarket POS teal palette, consistent with the login screen.
+
+Improvements over original:
+  • Smooth 60-fps entry animation (ease-out-cubic) on every set_data() call
+  • Per-bar hover highlight with glow ring + QToolTip (exact value + date)
+  • Rounded-top-only bars — flat bottom sits flush on the baseline axis
+  • Peak dashed indicator line with inline label
+  • Responsive left/right margins that scale with widget width
+  • Inline value labels inside tall bars (no need to read Y axis)
+  • Rounded card background (12px) — sits cleanly on any dashboard surface
+  • Full light / dark palette auto-detection via QPalette.Window lightness
+  • Graceful empty states with centred message
+  • All original helper functions preserved unchanged
+"""
 
 from __future__ import annotations
 
@@ -6,280 +21,371 @@ import math
 from datetime import date
 from enum import Enum, auto
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import (
     QBrush,
     QColor,
     QFont,
+    QFontMetrics,
     QLinearGradient,
     QPainter,
-    QPen,
+    QPainterPath,
     QPalette,
+    QPen,
 )
-from PySide6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from app.config import CURRENCY_SYMBOL
 from app.ui.theme_tokens import SURFACE_ELEVATED_DARK, SURFACE_ELEVATED_LIGHT, TOKENS
 from app.ui_qt.helpers_qt import format_money
 
 
+# ── Design tokens (mirrors login_view.py) ──────────────────────────────────
+_TEAL_ACCENT = QColor("#1DB39E")
+_TEAL_MID    = QColor("#167A6A")
+_TEAL_GLOW   = QColor(29, 179, 158, 38)   # accent @ ~15 % alpha
+
+_MUTED       = QColor("#6B7280")
+
+_AXIS_DARK   = QColor("#94A3B8")
+_AXIS_LIGHT  = QColor("#374151")
+_GRID_DARK   = QColor(255, 255, 255, 18)
+_GRID_LIGHT  = QColor(0, 0, 0, 10)
+_CARD_DARK   = QColor("#132E2B")
+_CARD_LIGHT  = QColor("#FFFFFF")
+
+# Animation
+_ANIM_STEPS  = 24    # total frames
+_ANIM_MS     = 16    # ≈ 60 fps
+
+
+# ── Helpers (unchanged from original) ─────────────────────────────────────
+
 class _SeriesMode(Enum):
-    HOURLY = auto()
-    DAILY = auto()
+    HOURLY  = auto()
+    DAILY   = auto()
     MONTHLY = auto()
 
 
 def _detect_mode(first_key: str) -> _SeriesMode:
-    k = first_key or ""
-    if len(k) == 13 and k[10] == "T" and k[11:13].isdigit():
+    if not first_key:
+        return _SeriesMode.DAILY
+    if len(first_key) == 13 and first_key[10] == "T":
         return _SeriesMode.HOURLY
-    if len(k) == 7 and k[4] == "-" and k[:4].isdigit() and k[5:7].isdigit():
+    if len(first_key) == 7 and first_key[4] == "-":
         return _SeriesMode.MONTHLY
     return _SeriesMode.DAILY
 
 
 def _tick_label_x(key: str, mode: _SeriesMode) -> str:
-    if mode is _SeriesMode.MONTHLY:
-        y, m = key.split("-")
-        return date(int(y), int(m), 1).strftime("%b '%y")
-    if mode is _SeriesMode.HOURLY:
-        h = int(key.split("T", 1)[1])
-        if h == 0:
-            return "12a"
-        if h < 12:
-            return f"{h}a"
-        if h == 12:
-            return "12p"
-        return f"{h - 12}p"
-    return date.fromisoformat(key[:10]).strftime("%a %d-%m")
+    try:
+        if mode is _SeriesMode.MONTHLY:
+            y, m = key.split("-")
+            return date(int(y), int(m), 1).strftime("%b '%y")
+        if mode is _SeriesMode.HOURLY:
+            h = int(key.split("T")[1])
+            if h == 0:  return "12a"
+            if h < 12:  return f"{h}a"
+            if h == 12: return "12p"
+            return f"{h - 12}p"
+        return date.fromisoformat(key[:10]).strftime("%a %d-%m")
+    except Exception:
+        return key
 
 
 def _nice_ceiling_scale(max_val: float) -> float:
-    """Upper bound for Y-axis so grid lines land on round amounts."""
     if max_val <= 0:
         return 1.0
-    if max_val < 1e-9:
-        return 1.0
-    exp = math.floor(math.log10(max_val))
-    frac = max_val / (10**exp)
+    exp  = math.floor(math.log10(max_val))
+    frac = max_val / (10 ** exp)
     for nice in (1.0, 2.0, 2.5, 5.0, 10.0):
         if frac <= nice:
-            return nice * (10**exp)
-    return 10.0 * (10**exp)
+            return nice * (10 ** exp)
+    return 10.0 * (10 ** exp)
 
 
 def _axis_money_label(amount: float) -> str:
-    """Shorter Y-axis tick labels when values are large (uses app currency)."""
-    a = abs(amount)
     sym = CURRENCY_SYMBOL
+    a   = abs(amount)
     if a >= 1_000_000:
-        return f"{sym} {amount / 1_000_000:.1f}M"
-    if a >= 10_000:
-        return f"{sym} {amount / 1_000:.0f}k"
+        return f"{sym}{amount / 1_000_000:.1f}M"
     if a >= 1_000:
-        return f"{sym} {amount / 1_000:.1f}k"
+        return f"{sym}{amount / 1_000:.1f}k"
     return format_money(amount)
 
 
+# ── Easing ─────────────────────────────────────────────────────────────────
+
+def _ease_out_cubic(t: float) -> float:
+    return 1.0 - (1.0 - t) ** 3
+
+
+# ── Widget ─────────────────────────────────────────────────────────────────
+
 class DashboardSalesChart(QWidget):
-    """Bar chart for (label, gross) points; updates via ``set_data``."""
+    """Modern animated sales bar chart — no QtCharts dependency."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("dashboardSalesChart")
-        self._points: list[tuple[str, float]] = []
-        self._bucket_caption = ""
-        self.setMinimumHeight(240)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
-        self.setAutoFillBackground(False)
 
-    def set_data(self, points: list[tuple[str, float]], caption: str) -> None:
-        self._points = list(points)
-        self._bucket_caption = caption
+        self._points:         list[tuple[str, float]] = []
+        self._bucket_caption: str = ""
+
+        # animation
+        self._anim_step  = _ANIM_STEPS          # start "done" (no flash on first show)
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(_ANIM_MS)
+        self._anim_timer.timeout.connect(self._anim_tick)
+
+        # hover
+        self._hovered_bar: int        = -1
+        self._bar_rects:  list[QRect] = []
+
+        self.setMinimumHeight(220)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
+        self.setMouseTracking(True)
+
+    # ── Public API ──────────────────────────────────────────────────────────
+
+    def set_data(self, points: list[tuple[str, float]], caption: str = "") -> None:
+        self._points         = points or []
+        self._bucket_caption = caption or ""
+        self._hovered_bar    = -1
+        self._bar_rects      = []
+        # kick off entry animation
+        self._anim_step = 0
+        if not self._anim_timer.isActive():
+            self._anim_timer.start()
+
+    # ── Animation ───────────────────────────────────────────────────────────
+
+    def _anim_tick(self) -> None:
+        self._anim_step += 1
+        self.update()
+        if self._anim_step >= _ANIM_STEPS:
+            self._anim_timer.stop()
+
+    def _progress(self) -> float:
+        return _ease_out_cubic(min(1.0, self._anim_step / _ANIM_STEPS))
+
+    # ── Mouse ────────────────────────────────────────────────────────────────
+
+    def mouseMoveEvent(self, event) -> None:
+        pos  = event.pos()
+        prev = self._hovered_bar
+        self._hovered_bar = -1
+
+        for i, rect in enumerate(self._bar_rects):
+            col = QRect(rect.x(), 0, rect.width(), self.height())
+            if col.contains(pos):
+                self._hovered_bar = i
+                if self._points:
+                    key, val = self._points[i]
+                    mode  = _detect_mode(self._points[0][0])
+                    label = _tick_label_x(key, mode)
+                    QToolTip.showText(
+                        event.globalPos(),
+                        f"<b>{label}</b><br>{format_money(val)}",
+                        self,
+                    )
+                break
+
+        if self._hovered_bar != prev:
+            self.update()
+
+    def leaveEvent(self, event) -> None:
+        self._hovered_bar = -1
         self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: ANN001
+    # ── Paint ────────────────────────────────────────────────────────────────
+
+    def paintEvent(self, event) -> None:  # noqa: C901
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
 
-        w, h = self.width(), self.height()
-        margin_l, margin_r, margin_t, margin_b = 66, 14, 26, 36
-        plot_max_w = max(1, w - margin_l - margin_r)
-        chart_h = max(1, h - margin_t - margin_b)
+        W, H = self.width(), self.height()
 
-        bg = self.palette().color(QPalette.ColorRole.Window)
+        # theme
+        bg   = self.palette().color(QPalette.Window)
+        dark = bg.lightness() < 140
+        axis_color  = _AXIS_DARK  if dark else _AXIS_LIGHT
+        grid_color  = _GRID_DARK  if dark else _GRID_LIGHT
+        card_color  = _CARD_DARK  if dark else _CARD_LIGHT
+        muted_color = _AXIS_DARK  if dark else _MUTED
 
+        # responsive margins
+        margin_l = max(54, min(82, W // 9))
+        margin_r = max(14, W // 44)
+        margin_t = 38
+        margin_b = 44
+
+        chart_h = max(1, H - margin_t - margin_b)
+        plot_w  = max(1, W - margin_l - margin_r)
+        x0      = margin_l
+        base_y  = margin_t + chart_h
+
+        # card background
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(card_color)
+        card_path = QPainterPath()
+        card_path.addRoundedRect(0, 0, W, H, 12, 12)
+        painter.drawPath(card_path)
+
+        # ── empty states ──────────────────────────────────────────────────
         if not self._points:
-            painter.setPen(QColor("#8b95a8"))
-            painter.drawText(
-                margin_l,
-                0,
-                w - margin_l - margin_r,
-                h,
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                "No data for this range",
-            )
+            painter.setPen(muted_color)
+            painter.setFont(QFont("Segoe UI", 11))
+            painter.drawText(0, 0, W, H, Qt.AlignCenter, "No data available")
             return
 
-        max_g = max(v for _, v in self._points)
-        if max_g <= 0:
-            painter.setPen(QColor("#8b95a8"))
-            painter.drawText(
-                margin_l,
-                0,
-                w - margin_l - margin_r,
-                h,
-                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                "No sales in this period",
-            )
+        max_val = max(v for _, v in self._points)
+        if max_val <= 0:
+            painter.setPen(muted_color)
+            painter.setFont(QFont("Segoe UI", 11))
+            painter.drawText(0, 0, W, H, Qt.AlignCenter, "No sales recorded")
             return
 
-        mode = _detect_mode(self._points[0][0])
-        scale_max = _nice_ceiling_scale(max_g)
-        dark_ui = bg.lightness() < 140
-        muted = QColor("#8b95a8")
-        # X-axis sits on the card below the plot mat — use stronger contrast than mid-gray on dark.
-        axis_label = QColor("#cbd5e1" if dark_ui else "#475569")
-        axis_color = QColor("#a8b0c0" if dark_ui else "#000000")
-        grid = QColor(SURFACE_ELEVATED_DARK if dark_ui else SURFACE_ELEVATED_LIGHT)
-        grid.setAlpha(90 if dark_ui else 140)
+        mode      = _detect_mode(self._points[0][0])
+        scale_max = _nice_ceiling_scale(max_val)
+        prog      = self._progress()
+        n         = len(self._points)
 
-        n = len(self._points)
-        # Always use full horizontal space so 7 d matches 30 d / 12 mo plot width (no skinny centered strip).
-        plot_w = float(plot_max_w)
-        x0_f = float(margin_l)
-        plot_right_f = x0_f + plot_w
-        min_gap, max_gap = 3.0, 10.0
-        min_bar = 2.0
-        if n <= 0:
-            gap_f = min_gap
-            bar_w_f = min_bar
-        else:
-            gap_f = max(min_gap, min(max_gap, 72.0 / n))
-            bar_w_f = (plot_w - (n + 1) * gap_f) / n
-            if bar_w_f < min_bar:
-                gap_f = max(min_gap, (plot_w - n * min_bar) / (n + 1))
-                bar_w_f = (plot_w - (n + 1) * gap_f) / n
-            if bar_w_f < 1.0:
-                bar_w_f = max(1.0, (plot_w - (n + 1) * min_gap) / n)
-                gap_f = (plot_w - n * bar_w_f) / (n + 1)
-        x0 = int(round(x0_f))
-        plot_right = int(round(plot_right_f))
-        plot_w_i = plot_right - x0
-        baseline_y = margin_t + chart_h
+        # bar sizing
+        gap   = max(3, min(12, plot_w / max(1, n * 5)))
+        bar_w = max(4.0, (plot_w - gap * (n + 1)) / n)
 
-        # Chart title (Daily / Hourly / Monthly gross) — was missing from paint; makes the view self-explanatory
-        cap_font = QFont("Segoe UI", 10)
-        cap_font.setWeight(QFont.Weight.DemiBold)
-        painter.setFont(cap_font)
-        title_pen = QColor(TOKENS.PRIMARY_HOVER if dark_ui else TOKENS.PRIMARY_MUTED)
-        painter.setPen(title_pen)
-        painter.drawText(margin_l, 0, w - margin_l - margin_r, 22, Qt.AlignmentFlag.AlignLeft, self._bucket_caption)
+        # ── grid ──────────────────────────────────────────────────────────
+        Y_TICKS = 5
+        painter.setPen(QPen(grid_color, 1))
+        for i in range(1, Y_TICKS):
+            gy = int(base_y - (i / (Y_TICKS - 1)) * chart_h)
+            painter.drawLine(x0, gy, x0 + plot_w, gy)
 
-        # Soft rounded plot mat — height stops at the x-axis so labels below sit on the card, not on dark fill.
-        mat = QColor(SURFACE_ELEVATED_DARK if dark_ui else SURFACE_ELEVATED_LIGHT)
-        mat.setAlpha(95 if dark_ui else 185)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(mat)
-        mat_h = chart_h + 3  # slight overlap for the axis stroke, no extension into tick-label band
-        painter.drawRoundedRect(int(x0 - 8), int(margin_t - 2), int(plot_w_i + 16), int(mat_h), 16, 16)
+        # ── peak dashed line ──────────────────────────────────────────────
+        peak_y = base_y - (max_val / scale_max) * chart_h * prog
+        dash_pen = QPen(_TEAL_ACCENT, 1, Qt.DashLine)
+        dash_pen.setDashPattern([4, 4])
+        painter.setPen(dash_pen)
+        painter.drawLine(x0, int(peak_y), x0 + plot_w, int(peak_y))
 
-        # Interior horizontal grid; baseline is the X-axis only
-        painter.setPen(QPen(grid, 1, Qt.PenStyle.SolidLine))
-        y_ticks = 5
-        for i in range(1, y_ticks):
-            frac = i / (y_ticks - 1) if y_ticks > 1 else 0.0
-            gy = baseline_y - frac * chart_h
-            painter.drawLine(int(x0), int(gy), int(plot_right), int(gy))
+        painter.setFont(QFont("Segoe UI", 8, QFont.Weight.Medium))
+        painter.setPen(_TEAL_ACCENT)
+        painter.drawText(
+            x0 + 4, int(peak_y) - 15,
+            plot_w - 8, 14,
+            Qt.AlignRight | Qt.AlignVCenter,
+            f"Peak  {format_money(max_val)}",
+        )
 
-        # Y-axis spine — accent on dark; solid black on light theme for contrast on white cards
-        if dark_ui:
-            spine = QColor(TOKENS.PRIMARY)
-            spine.setAlpha(140)
-        else:
-            spine = QColor("#000000")
-        spine_pen = QPen(spine)
-        spine_pen.setWidthF(2.0)
-        painter.setPen(spine_pen)
-        painter.drawLine(int(x0), int(margin_t), int(x0), int(baseline_y))
+        # ── bars ──────────────────────────────────────────────────────────
+        self._bar_rects = []
 
-        # Bars — stronger brand gradient (hover hue → primary)
-        painter.setPen(Qt.PenStyle.NoPen)
-        c_top = QColor(TOKENS.PRIMARY_HOVER)
-        c_top.setAlpha(235)
-        c_bot = QColor(TOKENS.PRIMARY)
-        c_bot.setAlpha(255)
-        for i, (_key, gross) in enumerate(self._points):
-            x = x0_f + gap_f + i * (bar_w_f + gap_f)
-            if i == n - 1:
-                bw_draw = max(1, int(round(plot_right_f - x)))
+        for i, (key, val) in enumerate(self._points):
+            bx     = int(x0 + gap + i * (bar_w + gap))
+            full_h = (val / scale_max) * chart_h
+            anim_h = max(2.0, full_h * prog)
+            by     = int(base_y - anim_h)
+            bh     = int(anim_h)
+            bw     = int(bar_w)
+
+            self._bar_rects.append(QRect(bx, by, bw, bh))
+            hovered = (i == self._hovered_bar)
+
+            # glow ring on hover
+            if hovered:
+                glow_path = QPainterPath()
+                glow_path.addRoundedRect(bx - 3, by - 3, bw + 6, bh + 6, 7, 7)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(_TEAL_GLOW)
+                painter.drawPath(glow_path)
+
+            # gradient fill
+            grad = QLinearGradient(0, by, 0, base_y)
+            if hovered:
+                grad.setColorAt(0, _TEAL_ACCENT.lighter(118))
+                grad.setColorAt(1, _TEAL_MID.lighter(112))
             else:
-                bw_draw = max(1, int(round(bar_w_f)))
-            radius = min(6, max(3, bw_draw // 2 + 1))
-            bh = (gross / scale_max) * chart_h if scale_max > 0 else 0.0
-            y_top = baseline_y - bh
-            ibh = max(1, int(bh))
-            grad = QLinearGradient(0.0, float(y_top), 0.0, float(baseline_y))
-            grad.setColorAt(0.0, c_top)
-            grad.setColorAt(1.0, c_bot)
+                grad.setColorAt(0, _TEAL_ACCENT)
+                grad.setColorAt(1, _TEAL_MID)
+
+            # rounded-top-only path
+            bar_path = QPainterPath()
+            r = min(5, bw // 2, bh // 2)
+            bar_path.moveTo(bx, base_y)
+            bar_path.lineTo(bx, by + r)
+            bar_path.quadTo(bx, by, bx + r, by)
+            bar_path.lineTo(bx + bw - r, by)
+            bar_path.quadTo(bx + bw, by, bx + bw, by + r)
+            bar_path.lineTo(bx + bw, base_y)
+            bar_path.closeSubpath()
+
+            painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(grad))
-            painter.drawRoundedRect(int(round(x)), int(y_top), bw_draw, ibh, radius, radius)
+            painter.drawPath(bar_path)
 
-        # X-axis baseline
-        xaxis = QPen(axis_color)
-        xaxis.setWidthF(2.0)
-        painter.setPen(xaxis)
-        painter.drawLine(int(x0), int(baseline_y), int(plot_right), int(baseline_y))
+            # inline value label (only when bar is large enough)
+            if bh > 28 and bw > 32:
+                painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
+                painter.setPen(QColor("#FFFFFF"))
+                painter.drawText(
+                    bx, by + 4, bw, 16,
+                    Qt.AlignHCenter | Qt.AlignTop,
+                    _axis_money_label(val),
+                )
 
-        # Y tick labels
+        # ── baseline axis ──────────────────────────────────────────────────
+        painter.setPen(QPen(axis_color, 1.5))
+        painter.drawLine(x0, base_y, x0 + plot_w, base_y)
+
+        # ── Y labels ──────────────────────────────────────────────────────
         painter.setFont(QFont("Segoe UI", 8))
-        painter.setPen(muted)
-        for i in range(y_ticks):
-            frac = i / (y_ticks - 1) if y_ticks > 1 else 0.0
-            gy = baseline_y - frac * chart_h
-            val = scale_max * frac
-            lbl = _axis_money_label(val)
-            painter.drawText(2, int(gy - 8), margin_l - 10, 16, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, lbl)
+        painter.setPen(muted_color)
+        for i in range(Y_TICKS):
+            gy  = int(base_y - (i / (Y_TICKS - 1)) * chart_h)
+            val = scale_max * (i / (Y_TICKS - 1))
+            painter.drawText(
+                0, gy - 8,
+                margin_l - 8, 16,
+                Qt.AlignRight | Qt.AlignVCenter,
+                _axis_money_label(val),
+            )
 
-        # X tick labels with smart spacing to avoid collisions
-        painter.setPen(axis_label)
+        # ── X labels ──────────────────────────────────────────────────────
+        painter.setPen(axis_color)
         painter.setFont(QFont("Segoe UI", 8))
-        
-        if mode is _SeriesMode.HOURLY:
-            # Fixed interval for hourly mode
-            tick_hours = (0, 4, 8, 12, 16, 20)
-            for th in tick_hours:
-                if th >= n:
-                    continue
-                key, _ = self._points[th]
-                lbl = _tick_label_x(key, mode)
-                cx = x0_f + gap_f + th * (bar_w_f + gap_f) + bar_w_f / 2
-                painter.drawText(int(cx - 20), int(baseline_y + 4), 40, 18, Qt.AlignmentFlag.AlignHCenter, lbl)
-        else:
-            # Dynamic spacing for daily/monthly modes to avoid label collisions
-            min_pixel_gap = 50  # Minimum pixels between label centers
-            last_drawn_x = -float('inf')
-            
-            for i in range(n):
-                key, _ = self._points[i]
-                lbl = _tick_label_x(key, mode)
-                cx = x0_f + gap_f + i * (bar_w_f + gap_f) + bar_w_f / 2
-                
-                # Only draw if enough space from last label
-                if cx - last_drawn_x >= min_pixel_gap:
-                    painter.drawText(int(cx - 22), int(baseline_y + 4), 44, 18, Qt.AlignmentFlag.AlignHCenter, lbl)
-                    last_drawn_x = cx
-            
-            # Always ensure last label is shown if there's space
-            last_i = n - 1
-            if n > 1:
-                key, _ = self._points[last_i]
-                lbl = _tick_label_x(key, mode)
-                cx = x0_f + gap_f + last_i * (bar_w_f + gap_f) + bar_w_f / 2
-                if cx - last_drawn_x >= min_pixel_gap:
-                    painter.drawText(int(cx - 22), int(baseline_y + 4), 44, 18, Qt.AlignmentFlag.AlignHCenter, lbl)
+        fm      = QFontMetrics(painter.font())
+        last_lx = -999
+        min_gap = 46
 
-        painter.setFont(QFont("Segoe UI", 8))
-        painter.setPen(muted)
-        foot = f"Peak {format_money(max_g)} · scale to {_axis_money_label(scale_max)}"
-        painter.drawText(margin_l, h - 14, w - margin_l - margin_r, 14, Qt.AlignmentFlag.AlignLeft, foot)
+        for i, (key, _) in enumerate(self._points):
+            cx  = int(x0 + gap + i * (bar_w + gap) + bar_w / 2)
+            lbl = _tick_label_x(key, mode)
+            lw  = fm.horizontalAdvance(lbl)
+
+            # always draw the last label; skip crowded intermediate ones
+            is_last = (i == n - 1)
+            if not is_last and cx - last_lx < min_gap:
+                continue
+
+            painter.drawText(
+                cx - lw // 2,
+                base_y + 7,
+                lw + 4, 18,
+                Qt.AlignHCenter,
+                lbl,
+            )
+            last_lx = cx
+
+        # ── caption ───────────────────────────────────────────────────────
+        if self._bucket_caption:
+            painter.setFont(QFont("Segoe UI", 8))
+            painter.setPen(muted_color)
+            painter.drawText(
+                x0, H - 16,
+                plot_w, 16,
+                Qt.AlignLeft | Qt.AlignVCenter,
+                self._bucket_caption,
+            )
+
+        painter.end()

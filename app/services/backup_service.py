@@ -4,8 +4,10 @@ from datetime import datetime
 from pathlib import Path
 
 from app.database.connection import db
+from app.database.db_backup import backup_database
 from app.database.sync import SyncTracker
-from app.services.shop_context import backups_dir
+from app.services.app_logging import get_logger
+from app.services.shop_context import backups_dir, db_backups_dir
 
 _PRODUCT_COLUMNS = (
     "id",
@@ -30,9 +32,13 @@ _SALES_COLUMNS = (
     "invoice_number",
     "sale_date",
     "subtotal",
+    "subtotal_cents",
     "discount_amount",
+    "discount_amount_cents",
     "tax_amount",
+    "tax_amount_cents",
     "total_amount",
+    "total_amount_cents",
     "payment_method",
     "customer_name",
     "cashier_name",
@@ -47,8 +53,33 @@ _SALE_ITEM_COLUMNS = (
     "product_id",
     "quantity",
     "unit_price",
+    "unit_price_cents",
     "discount_percentage",
     "total",
+    "total_cents",
+)
+
+_SALE_RETURN_COLUMNS = (
+    "id",
+    "sale_id",
+    "credit_memo_number",
+    "return_date",
+    "total_refund_amount",
+    "total_refund_amount_cents",
+    "payment_method",
+    "notes",
+    "cashier_name",
+    "created_at",
+)
+
+_SALE_RETURN_ITEM_COLUMNS = (
+    "id",
+    "sale_return_id",
+    "sale_item_id",
+    "product_id",
+    "quantity_returned",
+    "line_refund_amount",
+    "line_refund_amount_cents",
 )
 
 _SUPPLIER_COLUMNS = (
@@ -91,7 +122,23 @@ _PURCHASE_COLUMNS = (
 class BackupService:
     def __init__(self):
         self.backup_dir = backups_dir()
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
         self.sync = SyncTracker(db)
+
+    def latest_backup_summary(self) -> str:
+        """One-line status for dashboards / settings (newest ``backup_*.json`` by mtime)."""
+        try:
+            files = list(self.backup_dir.glob("backup_*.json"))
+        except OSError:
+            return "Backups folder unavailable."
+        if not files:
+            return "No backups yet."
+        latest = max(files, key=lambda p: p.stat().st_mtime)
+        try:
+            mtime = datetime.fromtimestamp(latest.stat().st_mtime)
+            return f"Last backup: {mtime.strftime('%Y-%m-%d %H:%M')} · {latest.name}"
+        except OSError:
+            return f"Last backup: {latest.name}"
 
     def create_full_backup(self) -> str:
         """Create complete backup of all data to JSON."""
@@ -101,6 +148,8 @@ class BackupService:
             "suppliers": [dict(row) for row in db.fetchall("SELECT * FROM suppliers")],
             "sales": [dict(row) for row in db.fetchall("SELECT * FROM sales")],
             "sale_items": [dict(row) for row in db.fetchall("SELECT * FROM sale_items")],
+            "sale_returns": [dict(row) for row in db.fetchall("SELECT * FROM sale_returns")],
+            "sale_return_items": [dict(row) for row in db.fetchall("SELECT * FROM sale_return_items")],
             "purchase_receipts": [dict(row) for row in db.fetchall("SELECT * FROM purchase_receipts")],
             "purchases": [dict(row) for row in db.fetchall("SELECT * FROM purchases")],
         }
@@ -110,6 +159,12 @@ class BackupService:
 
         with open(backup_file, "w", encoding="utf-8") as f:
             json.dump(backup_data, f, indent=2, default=str)
+
+        sqlite_backup = db_backups_dir() / f"backup_{timestamp}.db"
+        try:
+            backup_database(db.db_path, sqlite_backup)
+        except Exception as exc:
+            get_logger().warning("SQLite file backup failed: %s", exc)
 
         return str(backup_file)
 
@@ -203,7 +258,10 @@ class BackupService:
 
             cur = conn.cursor()
             cur.execute("BEGIN IMMEDIATE")
+            cur.execute("PRAGMA foreign_keys = OFF")
             cur.execute("DELETE FROM sale_items")
+            cur.execute("DELETE FROM sale_return_items")
+            cur.execute("DELETE FROM sale_returns")
             cur.execute("DELETE FROM sales")
             cur.execute("DELETE FROM purchases")
             cur.execute("DELETE FROM purchase_receipts")
@@ -221,11 +279,33 @@ class BackupService:
             )
             _insert_rows(cur, "sales", _SALES_COLUMNS, backup_data.get("sales", []))
             _insert_rows(cur, "sale_items", _SALE_ITEM_COLUMNS, backup_data.get("sale_items", []))
+            _insert_rows(
+                cur,
+                "sale_returns",
+                _SALE_RETURN_COLUMNS,
+                backup_data.get("sale_returns", []),
+            )
+            _insert_rows(
+                cur,
+                "sale_return_items",
+                _SALE_RETURN_ITEM_COLUMNS,
+                backup_data.get("sale_return_items", []),
+            )
             _insert_rows(cur, "purchases", _PURCHASE_COLUMNS, backup_data.get("purchases", []))
 
-            for table in ("products", "suppliers", "purchase_receipts", "sales", "sale_items", "purchases"):
+            for table in (
+                "products",
+                "suppliers",
+                "purchase_receipts",
+                "sales",
+                "sale_items",
+                "sale_returns",
+                "sale_return_items",
+                "purchases",
+            ):
                 _reset_sqlite_sequence(cur, table)
 
+            cur.execute("PRAGMA foreign_keys = ON")
             conn.commit()
             return True
         except Exception as e:

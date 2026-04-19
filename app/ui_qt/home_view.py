@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +32,8 @@ from app.services.sales_service import SalesService
 from app.ui.date_display import format_iso_date_as_display
 from app.ui.helpers import home_welcome_detail_line, home_welcome_status_line
 from app.ui_qt.dashboard_sales_chart import DashboardSalesChart
+from app.ui_qt.card_components import CardFrame
+from app.ui_qt.icon_utils import set_button_icon
 from app.ui_qt.helpers_qt import format_money, info_message, warning_message
 from app.ui_qt.dialogs_qt import PeriodSalesSummaryDialogQt, ReceiptPreviewDialogQt
 from app.ui_qt.manage_users_qt import ManageUsersDialogQt
@@ -47,23 +50,23 @@ class HomeView(QWidget):
 
         self._overview_value: QLabel | None = None
         self._overview_delta: QLabel | None = None
-        self._mini_invoices: QLabel | None = None
-        self._mini_cash: QLabel | None = None
-        self._mini_net: QLabel | None = None
-        self._mini_skus: QLabel | None = None
-        self._low_card: QFrame | None = None
+        self._kpi_today_sales: QLabel | None = None
+        self._kpi_revenue: QLabel | None = None
+        self._kpi_total_products: QLabel | None = None
+        self._kpi_low_stock: QLabel | None = None
+        self._kpi_low_stock_card: QFrame | None = None
         self._status_labels: dict[str, QLabel] = {}
         self._recent_inner: QWidget | None = None
         self._suppress_appearance_cb = False
         self._pill_group: QButtonGroup | None = None
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
         inner = QWidget()
         inner.setObjectName("dashboardInner")
+        inner.setMinimumWidth(0)
+        inner.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         root = QVBoxLayout(inner)
         root.setSpacing(PAD_MD)
+        root.setContentsMargins(0, 0, 0, 0)
 
         # Status strip
         strip = QFrame()
@@ -73,17 +76,32 @@ class HomeView(QWidget):
         self._status_labels["db"] = QLabel("")
         self._status_labels["theme"] = QLabel("")
         self._status_labels["backup"] = QLabel("")
-        for k in ("db", "theme", "backup"):
-            sl.addWidget(self._status_labels[k])
-            sl.addSpacing(PAD_LG)
+        # Long one-line QLabel text inflates minimum width and clips the right column — wrap + share space.
+        for lbl in self._status_labels.values():
+            lbl.setWordWrap(True)
+            lbl.setMinimumWidth(0)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._status_labels["db"].setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        self._status_labels["theme"].setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self._status_labels["backup"].setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        sl.addWidget(self._status_labels["db"], 0)
+        sl.addSpacing(PAD_LG)
+        sl.addWidget(self._status_labels["theme"], 1)
+        sl.addSpacing(PAD_LG)
+        sl.addWidget(self._status_labels["backup"], 1)
         root.addWidget(strip)
 
         main_row = QHBoxLayout()
         main_row.setSpacing(16)
+        main_row.setContentsMargins(0, 0, 0, 0)
 
         # ---- Left column: sales overview + recent ----
-        left_col = QVBoxLayout()
+        left_panel = QWidget()
+        left_panel.setMinimumWidth(0)
+        left_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        left_col = QVBoxLayout(left_panel)
         left_col.setSpacing(16)
+        left_col.setContentsMargins(0, 0, 0, 0)
 
         overview = QFrame()
         overview.setObjectName("card")
@@ -98,7 +116,8 @@ class HomeView(QWidget):
         hdr.addStretch(1)
         self._range_combo = QComboBox()
         self._range_combo.addItems(["Today", "Yesterday", "This week"])
-        self._range_combo.setMinimumWidth(160)
+        self._range_combo.setMinimumWidth(0)
+        self._range_combo.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.Fixed)
         self._range_combo.currentIndexChanged.connect(lambda _i: self.refresh())
         hdr.addWidget(self._range_combo)
         ov.addLayout(hdr)
@@ -120,6 +139,8 @@ class HomeView(QWidget):
             pb.setCheckable(True)
             pb.setObjectName("pillTab")
             pb.setCursor(Qt.PointingHandCursor)
+            pb.setMinimumWidth(0)
+            pb.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
             if i == 3:
                 pb.setChecked(True)
             self._pill_group.addButton(pb, i)
@@ -135,13 +156,18 @@ class HomeView(QWidget):
         chart_hdr.addStretch(1)
         sum_btn = QPushButton("Receipt-style summary")
         sum_btn.setObjectName("ghost")
+        sum_btn.setMinimumWidth(0)
+        sum_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         sum_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         sum_btn.setToolTip("Open a receipt-style text summary for the selected period")
         sum_btn.clicked.connect(self._open_period_sales_summary)
+        set_button_icon(sum_btn, "fa5s.receipt")
         chart_hdr.addWidget(sum_btn)
         ov.addLayout(chart_hdr)
         self._sales_chart = DashboardSalesChart()
-        self._sales_chart.setMinimumHeight(260)
+        self._sales_chart.setMinimumHeight(220)
+        self._sales_chart.setMinimumWidth(0)
+        self._sales_chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         ov.addWidget(self._sales_chart, 1)
 
         left_col.addWidget(overview)
@@ -163,59 +189,46 @@ class HomeView(QWidget):
         rl.addWidget(self._recent_inner)
         left_col.addWidget(recent_box, 1)
 
-        main_row.addLayout(left_col, 7)
+        main_row.addWidget(left_panel, 7)
 
-        # ---- Right column: KPI mini cards + actions ----
-        right_col = QVBoxLayout()
+        # ---- Right column: KPI cards + actions ----
+        right_panel = QWidget()
+        right_panel.setMinimumWidth(0)
+        right_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        right_col = QVBoxLayout(right_panel)
         right_col.setSpacing(12)
+        right_col.setContentsMargins(0, 0, 0, 0)
 
-        def _mini_card(title_label: QLabel, value_label: QLabel) -> QFrame:
-            f = QFrame()
-            f.setObjectName("miniKpiCard")
-            fl = QVBoxLayout(f)
-            fl.setContentsMargins(16, 14, 16, 14)
-            fl.setSpacing(6)
+        def _metric_card(title_text: str) -> tuple[QFrame, QLabel]:
+            f = CardFrame(self, object_name="miniKpiCard", padding=(16, 14, 16, 14), spacing=6)
+            f.setMinimumWidth(0)
+            fl = f.content_layout
+            title_label = QLabel(title_text)
             title_label.setObjectName("miniKpiTitle")
             fl.addWidget(title_label)
+            value_label = QLabel("—")
             value_label.setObjectName("miniKpiValue")
             fl.addWidget(value_label)
-            return f
+            return f, value_label
 
-        self._mini_inv_title = QLabel("Invoices (today)")
-        self._mini_invoices = QLabel("—")
-        right_col.addWidget(_mini_card(self._mini_inv_title, self._mini_invoices))
+        cards_grid = QGridLayout()
+        cards_grid.setSpacing(12)
+        c1, self._kpi_today_sales = _metric_card("Today Sales")
+        c2, self._kpi_revenue = _metric_card("Revenue")
+        c3, self._kpi_total_products = _metric_card("Total Products")
+        c4, self._kpi_low_stock = _metric_card("Low Stock")
+        self._kpi_low_stock_card = c4
+        cards_grid.addWidget(c1, 0, 0)
+        cards_grid.addWidget(c2, 0, 1)
+        cards_grid.addWidget(c3, 1, 0)
+        cards_grid.addWidget(c4, 1, 1)
+        cards_grid.setColumnStretch(0, 1)
+        cards_grid.setColumnStretch(1, 1)
+        right_col.addLayout(cards_grid)
 
-        self._mini_cash_title = QLabel("Cash (today)")
-        self._mini_cash = QLabel("—")
-        right_col.addWidget(_mini_card(self._mini_cash_title, self._mini_cash))
-
-        self._mini_net_title = QLabel("Sales total (today)")
-        self._mini_net = QLabel("—")
-        right_col.addWidget(_mini_card(self._mini_net_title, self._mini_net))
-
-        self._low_card = QFrame()
-        self._low_card.setObjectName("card")
-        ll = QVBoxLayout(self._low_card)
-        ll.setContentsMargins(16, 14, 16, 14)
-        donut = QFrame()
-        donut.setObjectName("donutPlaceholder")
-        donut.setFixedSize(120, 120)
-        dl = QVBoxLayout(donut)
-        dl.setAlignment(Qt.AlignCenter)
-        self._mini_skus = QLabel("—")
-        self._mini_skus.setObjectName("donutValue")
-        dl.addWidget(self._mini_skus, alignment=Qt.AlignCenter)
-        dcap = QLabel("Active products")
-        dcap.setObjectName("muted")
-        dl.addWidget(dcap, alignment=Qt.AlignCenter)
-        ll.addWidget(donut, alignment=Qt.AlignCenter)
-        right_col.addWidget(self._low_card)
-
-        actions = QFrame()
-        actions.setObjectName("card")
-        al = QVBoxLayout(actions)
-        al.setContentsMargins(16, 14, 16, 14)
-        al.setSpacing(8)
+        actions = CardFrame(self, object_name="card", padding=(16, 14, 16, 14), spacing=8)
+        actions.setMinimumWidth(0)
+        al = actions.content_layout
         a_head = QLabel("Next moves — stock & expiry")
         a_head.setObjectName("section")
         al.addWidget(a_head)
@@ -229,18 +242,23 @@ class HomeView(QWidget):
         self._actions_scroll = QScrollArea()
         self._actions_scroll.setWidgetResizable(True)
         self._actions_scroll.setFrameShape(QFrame.NoFrame)
-        self._actions_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._actions_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._actions_scroll.setMaximumHeight(240)
+        self._actions_scroll.setMinimumWidth(0)
         self._actions_inner = QWidget()
+        self._actions_inner.setMinimumWidth(0)
         self._actions_grid = QGridLayout(self._actions_inner)
         self._actions_grid.setSpacing(10)
         self._actions_grid.setContentsMargins(0, 4, 0, 0)
+        self._actions_grid.setColumnStretch(0, 1)
+        self._actions_grid.setColumnStretch(1, 1)
         self._actions_scroll.setWidget(self._actions_inner)
         al.addWidget(self._actions_scroll)
         right_col.addWidget(actions)
 
         sess = QFrame()
         sess.setObjectName("card")
+        sess.setMinimumWidth(0)
         se = QVBoxLayout(sess)
         se.setContentsMargins(16, 14, 16, 14)
         seh = QLabel("Session & preferences")
@@ -249,6 +267,9 @@ class HomeView(QWidget):
         self._welcome_label = QLabel("")
         self._welcome_label.setObjectName("pageSubtitle")
         self._welcome_label.setWordWrap(True)
+        self._welcome_label.setMinimumWidth(0)
+        self._welcome_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self._welcome_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         se.addWidget(self._welcome_label)
         row_dm = QHBoxLayout()
         row_dm.addWidget(QLabel("Dark mode"))
@@ -257,6 +278,10 @@ class HomeView(QWidget):
         row_dm.addWidget(self._appearance_check)
         row_dm.addStretch(1)
         se.addLayout(row_dm)
+        settings_tip = QLabel("Receipt printer, backups, and more: open Settings in the sidebar.")
+        settings_tip.setObjectName("muted")
+        settings_tip.setWordWrap(True)
+        se.addWidget(settings_tip)
         right_col.addWidget(sess)
 
         foot = QHBoxLayout()
@@ -264,29 +289,34 @@ class HomeView(QWidget):
         bu = QPushButton("Backup now", clicked=self._backup_now)
         bu.setObjectName("primary")
         bu.setCursor(Qt.PointingHandCursor)
+        set_button_icon(bu, "fa5s.database")
         foot.addWidget(bu)
         self._manage_users_btn = QPushButton("Manage users", clicked=self._open_manage_users)
         self._manage_users_btn.setCursor(Qt.PointingHandCursor)
+        set_button_icon(self._manage_users_btn, "fa5s.users-cog")
         foot.addWidget(self._manage_users_btn)
         rf = QPushButton("Refresh", clicked=self.refresh)
         rf.setCursor(Qt.PointingHandCursor)
+        set_button_icon(rf, "fa5s.sync")
         foot.addWidget(rf)
         foot.addStretch(1)
         self._footer_hint = QLabel("")
         self._footer_hint.setObjectName("muted")
-        foot.addWidget(self._footer_hint)
+        self._footer_hint.setWordWrap(True)
+        self._footer_hint.setMinimumWidth(0)
+        foot.addWidget(self._footer_hint, 1)
         right_col.addLayout(foot)
 
         right_col.addStretch(1)
-        main_row.addLayout(right_col, 3)
+        main_row.addWidget(right_panel, 3)
 
         root.addLayout(main_row)
-        root.addStretch(1)
 
-        scroll.setWidget(inner)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        outer.addWidget(inner)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
     def _open_manage_users(self) -> None:
         if not AuthService.is_owner(getattr(self._main, "current_user", None)):
@@ -342,14 +372,14 @@ class HomeView(QWidget):
         if idx == 0:
             s = e = t.isoformat()
             p = t - timedelta(days=1)
-            base = self._sales.aggregate_sales_range(p.isoformat(), p.isoformat())["gross_total"]
+            base = self._sales.aggregate_sales_range(p.isoformat(), p.isoformat())["net_total"]
             vs = "yesterday"
             titles = ("Invoices (today)", "Cash (today)", "Sales total (today)")
         elif idx == 1:
             y = t - timedelta(days=1)
             s = e = y.isoformat()
             p = y - timedelta(days=1)
-            base = self._sales.aggregate_sales_range(p.isoformat(), p.isoformat())["gross_total"]
+            base = self._sales.aggregate_sales_range(p.isoformat(), p.isoformat())["net_total"]
             vs = "prior day"
             titles = ("Invoices (yesterday)", "Cash (yesterday)", "Sales total (yesterday)")
         else:
@@ -359,7 +389,7 @@ class HomeView(QWidget):
             n_days = (t - mon).days + 1
             p0 = mon - timedelta(days=7)
             p1 = p0 + timedelta(days=n_days - 1)
-            base = self._sales.aggregate_sales_range(p0.isoformat(), p1.isoformat())["gross_total"]
+            base = self._sales.aggregate_sales_range(p0.isoformat(), p1.isoformat())["net_total"]
             vs = "same days last week"
             titles = (
                 "Invoices (week to date)",
@@ -374,7 +404,7 @@ class HomeView(QWidget):
         start = t - timedelta(days=days - 1)
         s, e = start.isoformat(), t.isoformat()
         pb_s, pb_e = self._prior_same_length_window(start, t)
-        base = self._sales.aggregate_sales_range(pb_s, pb_e)["gross_total"]
+        base = self._sales.aggregate_sales_range(pb_s, pb_e)["net_total"]
         if days == 7:
             vs, ttl = "prior 7 days", "last 7 days"
         elif days == 30:
@@ -414,7 +444,7 @@ class HomeView(QWidget):
         )
 
     def _latest_backup_text(self) -> str:
-        return "CODE10DIGITAL"
+        return self._backup.latest_backup_summary()
 
     def _sync_manage_users_button(self) -> None:
         self._manage_users_btn.setVisible(AuthService.is_owner(getattr(self._main, "current_user", None)))
@@ -437,7 +467,9 @@ class HomeView(QWidget):
         badge = {"expiring": "Expiring", "low": "Restock"}
         f = QFrame()
         f.setObjectName(on[kind])
-        f.setFixedSize(108, 108)
+        f.setFixedHeight(108)
+        f.setMinimumWidth(0)
+        f.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         f.setCursor(Qt.CursorShape.PointingHandCursor)
         f.setProperty("dashboardProductId", int(product["id"]))
         f.installEventFilter(self)
@@ -487,10 +519,11 @@ class HomeView(QWidget):
             empty = QLabel("No restock or expiry alerts — you're in good shape.")
             empty.setObjectName("muted")
             empty.setWordWrap(True)
-            self._actions_grid.addWidget(empty, 0, 0, 1, 3)
+            self._actions_grid.addWidget(empty, 0, 0, 1, 2)
             return
 
-        cols = 3
+        # Two columns so tiles fit the narrow right panel (3×108px overflowed).
+        cols = 2
         for i, (p, kind) in enumerate(tiles):
             self._actions_grid.addWidget(self._make_action_tile(p, kind), i // cols, i % cols)
 
@@ -619,7 +652,9 @@ class HomeView(QWidget):
             invoice_count=m["invoice_count"],
             subtotal_sum=m["subtotal_sum"],
             discount_sum=m["discount_sum"],
-            gross_total=m["gross_total"],
+            sales_total=m["sales_total"],
+            refund_total=m["refund_total"],
+            net_total=m["net_total"],
             cash_total=cash,
         )
         PeriodSalesSummaryDialogQt(self.window(), start_d, end_d, body).exec()
@@ -632,15 +667,10 @@ class HomeView(QWidget):
         self._sync_range_combo_for_pill()
 
         try:
-            start_d, end_d, base_gross, vs_caption, (t_inv, t_cash, t_net) = self._overview_period()
+            start_d, end_d, base_gross, vs_caption, _titles = self._overview_period()
             totals = self._sales.aggregate_sales_range(start_d, end_d)
-            gross = totals["gross_total"]
-            invoice_count = totals["invoice_count"]
-            cash = self._sales.cash_total_for_range(start_d, end_d)
-
-            self._mini_inv_title.setText(t_inv)
-            self._mini_cash_title.setText(t_cash)
-            self._mini_net_title.setText(t_net)
+            gross = totals["net_total"]
+            today_totals = self._sales.get_todays_totals()
 
             if self._overview_value is not None:
                 self._overview_value.setText(format_money(gross))
@@ -649,27 +679,27 @@ class HomeView(QWidget):
                     self._format_delta(gross, base_gross, money=True, vs_caption=vs_caption),
                 )
 
-            if self._mini_invoices is not None:
-                self._mini_invoices.setText(str(invoice_count))
-            if self._mini_cash is not None:
-                self._mini_cash.setText(format_money(cash))
-            if self._mini_net is not None:
-                self._mini_net.setText(format_money(gross))
+            if self._kpi_today_sales is not None:
+                self._kpi_today_sales.setText(str(today_totals.get("invoice_count", 0)))
+            if self._kpi_revenue is not None:
+                self._kpi_revenue.setText(format_money(float(today_totals.get("net_total", 0))))
 
             series, chart_cap = self._sales.chart_series_for_overview(start_d, end_d)
             self._sales_chart.set_data(series, chart_cap)
 
             active_skus = self._inventory.get_active_product_count()
-            if self._mini_skus is not None:
-                self._mini_skus.setText(str(active_skus))
+            if self._kpi_total_products is not None:
+                self._kpi_total_products.setText(str(active_skus))
 
             low_n = self._inventory.get_low_stock_count(10)
-            if self._low_card is not None:
-                self._low_card.setObjectName("cardWarning" if low_n else "card")
-                st = self._low_card.style()
+            if self._kpi_low_stock is not None:
+                self._kpi_low_stock.setText(str(low_n))
+            if self._kpi_low_stock_card is not None:
+                self._kpi_low_stock_card.setObjectName("cardWarning" if low_n else "miniKpiCard")
+                st = self._kpi_low_stock_card.style()
                 if st is not None:
-                    st.unpolish(self._low_card)
-                    st.polish(self._low_card)
+                    st.unpolish(self._kpi_low_stock_card)
+                    st.polish(self._kpi_low_stock_card)
 
             recent = self._sales.get_recent_sales(5)
             self._rebuild_recent_list(recent)
@@ -681,7 +711,7 @@ class HomeView(QWidget):
                 self._overview_value.setText("—")
             if self._overview_delta is not None:
                 self._overview_delta.setText("")
-            for lab in (self._mini_invoices, self._mini_cash, self._mini_net, self._mini_skus):
+            for lab in (self._kpi_today_sales, self._kpi_revenue, self._kpi_total_products, self._kpi_low_stock):
                 if lab is not None:
                     lab.setText("—")
             if getattr(self, "_sales_chart", None) is not None:

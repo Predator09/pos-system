@@ -8,6 +8,7 @@ import sqlite3
 import unicodedata
 
 from app.database.connection import db
+from app.services.audit_service import AuditService
 
 _ITERATIONS = 200_000
 
@@ -74,6 +75,9 @@ def _pbkdf2_record_looks_valid(stored: str) -> bool:
 
 
 class AuthService:
+    def __init__(self):
+        self.audit = AuditService()
+
     def has_any_users(self) -> bool:
         """True if at least one row exists in ``users`` (shop already provisioned)."""
         try:
@@ -98,10 +102,15 @@ class AuthService:
         try:
             db.execute(
                 """
-                INSERT INTO users (username, password_hash, full_name, role, is_active)
-                VALUES (?, ?, ?, ?, 1)
+                INSERT INTO users (username, password_hash, full_name, role, is_active, must_change_password)
+                VALUES (?, ?, ?, ?, 1, 1)
                 """,
                 ("admin", pw, "Administrator", "owner"),
+            )
+            self.audit.record(
+                event_type="user_created",
+                entity_type="user",
+                details={"username": "admin", "role": "owner", "source": "default_seed"},
             )
         except sqlite3.IntegrityError:
             pass
@@ -138,8 +147,8 @@ class AuthService:
         try:
             db.execute(
                 """
-                INSERT INTO users (username, password_hash, full_name, role, is_active)
-                VALUES (?, ?, ?, 'owner', 1)
+                INSERT INTO users (username, password_hash, full_name, role, is_active, must_change_password)
+                VALUES (?, ?, ?, 'owner', 1, 0)
                 """,
                 (uname, h, name),
             )
@@ -157,6 +166,12 @@ class AuthService:
         )
         if not row:
             raise ValueError("Registration failed.")
+        self.audit.record(
+            event_type="user_created",
+            entity_type="user",
+            entity_id=int(row["id"]),
+            details={"username": row["username"], "role": "owner", "source": "shop_registration"},
+        )
         return {
             "id": row["id"],
             "username": row["username"],
@@ -171,7 +186,8 @@ class AuthService:
         try:
             row = db.fetchone(
                 """
-                SELECT id, username, password_hash, full_name, role
+                SELECT id, username, password_hash, full_name, role,
+                       COALESCE(must_change_password, 0) AS must_change_password
                 FROM users WHERE lower(username) = lower(?) AND is_active = 1
                 """,
                 (username,),
@@ -211,6 +227,7 @@ class AuthService:
             "username": row["username"],
             "full_name": row["full_name"],
             "role": row["role"],
+            "must_change_password": bool(row["must_change_password"]),
         }
 
     @staticmethod
@@ -284,8 +301,8 @@ class AuthService:
         try:
             db.execute(
                 """
-                INSERT INTO users (username, password_hash, full_name, role, is_active)
-                VALUES (?, ?, ?, ?, 1)
+                INSERT INTO users (username, password_hash, full_name, role, is_active, must_change_password)
+                VALUES (?, ?, ?, ?, 1, 1)
                 """,
                 (uname, h, name, r),
             )
@@ -295,7 +312,15 @@ class AuthService:
             "SELECT id FROM users WHERE lower(username) = lower(?)",
             (uname,),
         )
-        return int(row["id"]) if row else 0
+        user_id = int(row["id"]) if row else 0
+        self.audit.record(
+            event_type="user_created",
+            entity_type="user",
+            entity_id=user_id or None,
+            actor_user_id=self._acting_id(acting_user),
+            details={"username": uname, "role": r},
+        )
+        return user_id
 
     def update_user(
         self,
@@ -351,6 +376,19 @@ class AuthService:
                 "UPDATE users SET is_active = ? WHERE id = ?",
                 (1 if new_active else 0, uid),
             )
+        self.audit.record(
+            event_type="user_updated",
+            entity_type="user",
+            entity_id=uid,
+            actor_user_id=actor_id,
+            details={
+                "full_name_changed": full_name is not None,
+                "role_changed": role is not None,
+                "is_active_changed": is_active is not None,
+                "new_role": new_role,
+                "new_is_active": bool(new_active),
+            },
+        )
 
     def set_password(self, acting_user: dict | None, user_id: int, new_password: str) -> None:
         self._require_owner(acting_user)
@@ -362,13 +400,23 @@ class AuthService:
         if len(pwd) < 4:
             raise ValueError("Password must be at least 4 characters.")
         h = _hash_password(pwd)
-        db.execute("UPDATE users SET password_hash = ? WHERE id = ?", (h, uid))
+        db.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?",
+            (h, uid),
+        )
+        self.audit.record(
+            event_type="user_password_reset",
+            entity_type="user",
+            entity_id=uid,
+            actor_user_id=self._acting_id(acting_user),
+            details={"must_change_password": True},
+        )
 
     def get_session_user(self, user_id: int) -> dict | None:
         """Return the same user dict shape as ``authenticate`` for an active account, or None."""
         row = db.fetchone(
             """
-            SELECT id, username, full_name, role
+            SELECT id, username, full_name, role, COALESCE(must_change_password, 0) AS must_change_password
             FROM users WHERE id = ? AND is_active = 1
             """,
             (int(user_id),),
@@ -380,6 +428,7 @@ class AuthService:
             "username": row["username"],
             "full_name": row["full_name"],
             "role": row["role"],
+            "must_change_password": bool(row["must_change_password"]),
         }
 
     def update_own_profile(
@@ -422,6 +471,13 @@ class AuthService:
             )
         except sqlite3.IntegrityError:
             raise ValueError(f"Username “{uname}” is already taken.") from None
+        self.audit.record(
+            event_type="user_profile_updated",
+            entity_type="user",
+            entity_id=uid,
+            actor_user_id=uid,
+            details={"username": uname},
+        )
         snap = self.get_session_user(uid)
         if not snap:
             raise ValueError("Could not reload your profile.")
@@ -456,4 +512,52 @@ class AuthService:
         if len(pwd) < 4:
             raise ValueError("New password must be at least 4 characters.")
         h = _hash_password(pwd)
-        db.execute("UPDATE users SET password_hash = ? WHERE id = ?", (h, uid))
+        db.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+            (h, uid),
+        )
+        self.audit.record(
+            event_type="user_password_changed",
+            entity_type="user",
+            entity_id=uid,
+            actor_user_id=uid,
+            details={"path": "self_service"},
+        )
+
+    def complete_first_login_password_change(
+        self,
+        acting_user: dict | None,
+        *,
+        new_password: str,
+    ) -> dict:
+        """Force-set a new password and clear ``must_change_password`` for the signed-in user."""
+        uid = self._acting_id(acting_user)
+        if uid is None:
+            raise ValueError("Not signed in.")
+        row = db.fetchone(
+            "SELECT id, is_active FROM users WHERE id = ?",
+            (uid,),
+        )
+        if not row:
+            raise ValueError("User not found.")
+        if not int(row["is_active"] or 0):
+            raise ValueError("Your account is inactive.")
+        pwd = _normalize_password(new_password)
+        if len(pwd) < 4:
+            raise ValueError("New password must be at least 4 characters.")
+        h = _hash_password(pwd)
+        db.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+            (h, uid),
+        )
+        self.audit.record(
+            event_type="user_password_changed",
+            entity_type="user",
+            entity_id=uid,
+            actor_user_id=uid,
+            details={"path": "first_login_forced"},
+        )
+        snap = self.get_session_user(uid)
+        if not snap:
+            raise ValueError("Could not reload your account.")
+        return snap

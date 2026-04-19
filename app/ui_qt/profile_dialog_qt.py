@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from app.database.connection import db
 from app.services.auth_service import AuthService
 from app.services.shop_context import delete_shop, list_shops, shop_combo_entries
+from app.ui_qt.icon_utils import set_button_icon, style_dialog_button_box
 
 
 class ProfileDialogQt(QDialog):
@@ -93,6 +94,7 @@ class ProfileDialogQt(QDialog):
             del_btn = QPushButton("Delete selected shop…")
             del_btn.setObjectName("ghost")
             del_btn.clicked.connect(self._on_delete_shop)
+            set_button_icon(del_btn, "fa5s.trash-alt")
             form.addRow("", del_btn)
 
             self._reload_shop_list()
@@ -104,6 +106,7 @@ class ProfileDialogQt(QDialog):
         )
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
+        style_dialog_button_box(buttons, ok_icon="fa5s.save")
         root.addWidget(buttons)
 
     def _reload_shop_list(self) -> None:

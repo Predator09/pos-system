@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import csv
-
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QKeyEvent
 from PySide6.QtWidgets import (
@@ -25,13 +23,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import PAD_MD
+from app.config import PAD_LG, PAD_MD, PAD_SM
 from app.ui.date_display import format_iso_date_as_display, parse_expiry_input
 from app.services.app_settings import AppSettings
 from app.services.product_service import ProductService
+from app.ui_qt.presenters.products_presenter import ProductsPresenter
 from app.ui.theme_tokens import product_active_row_surface
 
 from app.ui_qt.helpers_qt import ask_yes_no, format_money, info_message, warning_message
+from app.ui_qt.icon_utils import set_button_icon
 
 _TREE_COLS = ("id", "name", "pc", "barcode", "category", "price", "stock", "cost", "status", "expiry")
 _TABLE_HEADERS = (
@@ -63,17 +63,6 @@ _CSV_FIELDS = [
 ]
 
 
-def _norm_csv_key(k: str) -> str:
-    return (k or "").strip().lower().replace(" ", "_")
-
-
-def _csv_row_to_payload(row: dict) -> dict:
-    m = {_norm_csv_key(k): (v or "").strip() if isinstance(v, str) else v for k, v in row.items()}
-    if "code" not in m and m.get("sku"):
-        m["code"] = m["sku"]
-    return m
-
-
 class ProductEditorDialogQt(QDialog):
     def __init__(self, parent, service: ProductService, product_id: int | None, categories: list[str]):
         super().__init__(parent)
@@ -84,7 +73,11 @@ class ProductEditorDialogQt(QDialog):
         self.resize(520, 600)
 
         outer = QVBoxLayout(self)
+        outer.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
+        outer.setSpacing(PAD_MD)
         f = QFormLayout()
+        f.setHorizontalSpacing(PAD_MD)
+        f.setVerticalSpacing(PAD_SM)
         self._name = QLineEdit()
         self._category = QComboBox()
         self._category.setEditable(True)
@@ -102,9 +95,11 @@ class ProductEditorDialogQt(QDialog):
         self._image = QLineEdit()
         img_browse = QPushButton("Browse…")
         img_browse.clicked.connect(self._browse_image)
+        set_button_icon(img_browse, "fa5s.image")
         img_row = QWidget()
         ir = QHBoxLayout(img_row)
         ir.setContentsMargins(0, 0, 0, 0)
+        ir.setSpacing(PAD_SM)
         ir.addWidget(self._image, 1)
         ir.addWidget(img_browse)
         self._desc = QLineEdit()
@@ -154,6 +149,7 @@ class ProductEditorDialogQt(QDialog):
         save_btn = bb.button(QDialogButtonBox.StandardButton.Save)
         if save_btn is not None:
             save_btn.setObjectName("primary")
+            set_button_icon(save_btn, "fa5s.save")
         outer.addWidget(bb)
 
     def _browse_image(self) -> None:
@@ -250,18 +246,20 @@ class ProductsView(QWidget):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self._main = main_window
-        self._svc = ProductService()
+        self._presenter = ProductsPresenter(ProductService())
+        self._svc = self._presenter.service
         self._all_products: list[dict] = []
         self._stat_labels: dict[str, QLabel] = {}
         self._filter_timer: QTimer | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(PAD_MD)
 
         main_card = QFrame()
         main_card.setObjectName("card")
         card_inner = QVBoxLayout(main_card)
-        card_inner.setContentsMargins(16, 16, 16, 16)
+        card_inner.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
         card_inner.setSpacing(PAD_MD)
 
         head = QHBoxLayout()
@@ -269,22 +267,25 @@ class ProductsView(QWidget):
         ph.setObjectName("muted")
         head.addWidget(ph, 1)
         hb = QHBoxLayout()
-        hb.setSpacing(10)
+        hb.setSpacing(PAD_SM)
         np = QPushButton("New product", clicked=self._new_product)
         np.setObjectName("primary")
         np.setCursor(Qt.PointingHandCursor)
+        set_button_icon(np, "fa5s.plus-circle")
         hb.addWidget(np)
         im = QPushButton("Import CSV", clicked=self._import_csv)
         im.setCursor(Qt.PointingHandCursor)
+        set_button_icon(im, "fa5s.file-import")
         hb.addWidget(im)
         ex = QPushButton("Export CSV", clicked=self._export_csv)
         ex.setCursor(Qt.PointingHandCursor)
+        set_button_icon(ex, "fa5s.file-export")
         hb.addWidget(ex)
         head.addLayout(hb)
         card_inner.addLayout(head)
 
         stats = QHBoxLayout()
-        stats.setSpacing(16)
+        stats.setSpacing(PAD_MD)
         for key, title in (
             ("total", "Total"),
             ("low", "Low stock"),
@@ -305,6 +306,8 @@ class ProductsView(QWidget):
         card_inner.addLayout(stats)
 
         filt = QGridLayout()
+        filt.setHorizontalSpacing(PAD_SM)
+        filt.setVerticalSpacing(PAD_SM)
         self._search = QLineEdit()
         self._search.textChanged.connect(self._schedule_filter)
         self._cat = QComboBox()
@@ -335,20 +338,35 @@ class ProductsView(QWidget):
         filt.addWidget(self._status, r, 5)
         r += 1
         fa = QHBoxLayout()
-        fa.addWidget(QPushButton("Apply", clicked=self._apply_filters))
-        fa.addWidget(QPushButton("Clear", clicked=self._clear_filters))
+        fa.setSpacing(PAD_SM)
+        apply_btn = QPushButton("Apply", clicked=self._apply_filters)
+        clear_btn = QPushButton("Clear", clicked=self._clear_filters)
+        set_button_icon(apply_btn, "fa5s.check")
+        set_button_icon(clear_btn, "fa5s.eraser")
+        fa.addWidget(apply_btn)
+        fa.addWidget(clear_btn)
         filt.addLayout(fa, r, 0, 1, 6)
         card_inner.addLayout(filt)
 
         self._bulk_frame = QWidget()
         bl = QHBoxLayout(self._bulk_frame)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(PAD_SM)
         bl.addWidget(QLabel("Selection:"))
         self._sel_count = QLabel("0")
         bl.addWidget(self._sel_count)
-        bl.addWidget(QPushButton("Restock +5", clicked=lambda: self._bulk_restock(5)))
-        bl.addWidget(QPushButton("Deactivate", clicked=self._bulk_deactivate))
-        bl.addWidget(QPushButton("Price +/- %", clicked=self._bulk_price_pct))
-        bl.addWidget(QPushButton("Set min alert", clicked=self._bulk_min_alert))
+        restock_btn = QPushButton("Restock +5", clicked=lambda: self._bulk_restock(5))
+        deactivate_btn = QPushButton("Deactivate", clicked=self._bulk_deactivate)
+        price_btn = QPushButton("Price +/- %", clicked=self._bulk_price_pct)
+        min_alert_btn = QPushButton("Set min alert", clicked=self._bulk_min_alert)
+        set_button_icon(restock_btn, "fa5s.boxes")
+        set_button_icon(deactivate_btn, "fa5s.power-off")
+        set_button_icon(price_btn, "fa5s.percentage")
+        set_button_icon(min_alert_btn, "fa5s.bell")
+        bl.addWidget(restock_btn)
+        bl.addWidget(deactivate_btn)
+        bl.addWidget(price_btn)
+        bl.addWidget(min_alert_btn)
         bl.addStretch(1)
         self._bulk_frame.setVisible(False)
         card_inner.addWidget(self._bulk_frame)
@@ -391,50 +409,18 @@ class ProductsView(QWidget):
         self._filter_timer.stop()
         self._filter_timer.start(180)
 
-    def _parse_opt_float(self, s: str) -> float | None:
-        t = str(s).strip().replace(",", "")
-        if not t:
-            return None
-        try:
-            return float(t)
-        except ValueError:
-            return None
-
     def _passes_filters(self, p: dict) -> bool:
-        q = self._search.text().strip().lower()
-        bc = (p.get("barcode") or "").lower()
-        if q and q not in (p.get("name") or "").lower() and q not in (p.get("code") or "").lower() and q not in bc:
-            return False
-        cat = self._cat.currentText()
-        if cat and cat != "(all)":
-            if (p.get("category") or "") != cat:
-                return False
-        pmin = self._parse_opt_float(self._pmin.text())
-        pmax = self._parse_opt_float(self._pmax.text())
-        price = float(p.get("selling_price") or 0)
-        if pmin is not None and price < pmin:
-            return False
-        if pmax is not None and price > pmax:
-            return False
-        st = ProductService.row_status(p)
-        fs = self._status.currentText()
-        if fs and fs != "(all)" and st != fs:
-            return False
-        sk = self._stock.currentText()
-        if sk and sk != "(all)":
-            qty = float(p.get("quantity_in_stock") or 0)
-            mn = float(p.get("minimum_stock_level") or 0)
-            active = bool(p.get("is_active"))
-            if sk == "low":
-                if not active or qty <= 0 or qty > mn:
-                    return False
-            elif sk == "out":
-                if not active or qty > 0:
-                    return False
-            elif sk == "ok":
-                if not active or qty <= 0 or qty <= mn:
-                    return False
-        return True
+        return self._presenter.passes_filters(
+            p,
+            {
+                "search": self._search.text(),
+                "category": self._cat.currentText(),
+                "price_min": self._pmin.text(),
+                "price_max": self._pmax.text(),
+                "stock": self._stock.currentText(),
+                "status": self._status.currentText(),
+            },
+        )
 
     def _apply_filters(self) -> None:
         self._table.setRowCount(0)
@@ -567,9 +553,14 @@ class ProductsView(QWidget):
         self._apply_filters()
 
     def refresh(self) -> None:
-        self._all_products = self._svc.list_all_products()
+        self._all_products, _stats, _cats = self._presenter.refresh_data()
         self._refresh_category_combo()
-        self._update_stats()
+        self._stat_labels["total"].setText(str(_stats["total_products"]))
+        self._stat_labels["low"].setText(str(_stats["low_stock"]))
+        self._stat_labels["out"].setText(str(_stats["out_of_stock"]))
+        self._stat_labels["value"].setText(format_money(_stats["inventory_value"]))
+        self._stat_labels["topcat"].setText(_stats["top_category"] or "—")
+        self._stat_labels["avg"].setText(format_money(_stats["avg_price"]))
         self._apply_filters()
 
     def _new_product(self) -> None:
@@ -595,14 +586,14 @@ class ProductsView(QWidget):
             return
         if not ask_yes_no(self.window(), "Deactivate", f"Mark {len(ids)} product(s) as inactive?"):
             return
-        self._svc.bulk_deactivate(ids)
+        self._presenter.bulk_deactivate(ids)
         self.refresh()
 
     def _bulk_restock(self, n: float) -> None:
         ids = self._selected_ids()
         if not ids:
             return
-        self._svc.bulk_add_stock(ids, n)
+        self._presenter.bulk_restock(ids, n)
         self.refresh()
 
     def _bulk_deactivate(self) -> None:
@@ -623,7 +614,7 @@ class ProductsView(QWidget):
         )
         if not ok:
             return
-        self._svc.bulk_adjust_selling_price_percent(ids, v)
+        self._presenter.bulk_price_pct(ids, v)
         self.refresh()
 
     def _bulk_min_alert(self) -> None:
@@ -641,7 +632,7 @@ class ProductsView(QWidget):
         )
         if not ok:
             return
-        self._svc.bulk_set_minimum_stock(ids, v)
+        self._presenter.bulk_min_alert(ids, v)
         self.refresh()
 
     def _export_csv(self) -> None:
@@ -658,27 +649,7 @@ class ProductsView(QWidget):
         if not path:
             return
         try:
-            with open(path, "w", newline="", encoding="utf-8-sig") as f:
-                w = csv.DictWriter(f, fieldnames=_CSV_FIELDS, extrasaction="ignore")
-                w.writeheader()
-                for p in rows:
-                    w.writerow(
-                        {
-                            "id": p.get("id"),
-                            "code": p.get("code"),
-                            "barcode": p.get("barcode") or "",
-                            "name": p.get("name"),
-                            "category": p.get("category") or "",
-                            "cost_price": p.get("cost_price"),
-                            "selling_price": p.get("selling_price"),
-                            "quantity_in_stock": p.get("quantity_in_stock"),
-                            "minimum_stock_level": p.get("minimum_stock_level"),
-                            "is_active": 1 if p.get("is_active") else 0,
-                            "expiry_date": p.get("expiry_date") or "",
-                            "image_path": p.get("image_path") or "",
-                            "description": p.get("description") or "",
-                        }
-                    )
+            self._presenter.export_csv(path, rows, _CSV_FIELDS)
         except OSError as e:
             warning_message(self.window(), "Export", f"Export failed: {e}")
             return
@@ -693,23 +664,11 @@ class ProductsView(QWidget):
         )
         if not path:
             return
-        n_ins = n_up = n_err = 0
         try:
-            with open(path, newline="", encoding="utf-8-sig") as f:
-                r = csv.DictReader(f)
-                if not r.fieldnames:
-                    warning_message(self.window(), "Import", "CSV has no header row.")
-                    return
-                for raw in r:
-                    payload = _csv_row_to_payload(raw)
-                    try:
-                        kind, _ = self._svc.upsert_product_from_row(payload)
-                        if kind == "insert":
-                            n_ins += 1
-                        else:
-                            n_up += 1
-                    except Exception:
-                        n_err += 1
+            n_ins, n_up, n_err = self._presenter.import_csv(path)
+        except ValueError as e:
+            warning_message(self.window(), "Import", str(e))
+            return
         except OSError as e:
             warning_message(self.window(), "Import", f"Import failed: {e}")
             return

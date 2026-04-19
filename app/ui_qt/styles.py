@@ -47,11 +47,42 @@ _DARK_QSS = f"""
 /* ---- Base ---- */
 QMainWindow, QWidget {{
     background-color: {_SBD};
-    color: #e8eaef;
-    font-family: "Segoe UI", "SF Pro Text", system-ui, sans-serif;
-    font-size: 13px;
+    color: #F8FAFC;
+    font-family: "Inter", "Segoe UI", "SF Pro Text", system-ui, sans-serif;
+    font-size: 14px;
     selection-background-color: {_ACCENT};
     selection-color: #ffffff;
+}}
+
+/* ---- Global reset: avoid native/default Qt chrome ---- */
+QFrame, QGroupBox, QStackedWidget, QTabWidget, QScrollArea, QListView, QTreeView,
+QTableView, QTableWidget, QTextEdit, QPlainTextEdit, QLineEdit, QComboBox,
+QSpinBox, QDoubleSpinBox, QPushButton, QToolButton, QDateEdit, QDateTimeEdit,
+QTimeEdit, QAbstractSpinBox, QAbstractItemView {{
+    background-clip: padding;
+    outline: none;
+}}
+QGroupBox {{
+    border: 1px solid {_BC_D};
+    border-radius: 12px;
+    margin-top: 10px;
+    padding: 12px;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 4px;
+    color: #94A3B8;
+    font-weight: 600;
+}}
+QSplitter::handle {{
+    background-color: {_BC_D};
+}}
+QSplitter::handle:horizontal {{
+    width: 2px;
+}}
+QSplitter::handle:vertical {{
+    height: 2px;
 }}
 
 /* QLabel: transparent so text sits on the parent surface (cards, rails) instead of a separate fill */
@@ -61,7 +92,7 @@ QLabel {{
 
 QToolTip {{
     background-color: {_SCD};
-    color: #e8eaef;
+    color: #F8FAFC;
     border: 1px solid {_BC_D_S};
     border-radius: 8px;
     padding: 8px 10px;
@@ -152,8 +183,8 @@ QLabel#pageTitle {{
     letter-spacing: -0.4px;
 }}
 QLabel#pageSubtitle {{
-    font-size: 13px;
-    color: #8b95a8;
+    font-size: 14px;
+    color: #94A3B8;
 }}
 QLabel#sidebarBrandName {{
     font-size: 15px;
@@ -162,7 +193,7 @@ QLabel#sidebarBrandName {{
 }}
 QLabel#sidebarBrandTag {{
     font-size: 11px;
-    color: #8b95a8;
+    color: #94A3B8;
 }}
 QLabel#topBarUser {{
     color: #c5cdd8;
@@ -202,7 +233,7 @@ QListWidget#sidebarNav {{
 QLabel#heroMetric {{
     font-size: 36px;
     font-weight: 700;
-    color: #f5f7fa;
+    color: #F8FAFC;
     letter-spacing: -1px;
 }}
 QFrame#miniKpiCard {{
@@ -212,7 +243,7 @@ QFrame#miniKpiCard {{
 }}
 QLabel#miniKpiTitle {{
     font-size: 12px;
-    color: #8b95a8;
+    color: #94A3B8;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -300,8 +331,8 @@ QLabel#section {{
     color: #dce2eb;
 }}
 QLabel#muted {{
-    color: #8b95a8;
-    font-size: 12px;
+    color: #94A3B8;
+    font-size: 14px;
 }}
 QLabel#kpiValue {{
     font-size: 22px;
@@ -313,6 +344,17 @@ QLabel#kpiValueSm {{
     font-size: 16px;
     font-weight: 700;
     color: #f0f4f8;
+}}
+QFrame#posTotalCard {{
+    background-color: {_SED};
+    border: 1px solid {_ACCENT};
+    border-radius: 12px;
+}}
+QLabel#posTotalValue {{
+    font-size: 30px;
+    font-weight: 800;
+    color: #F8FAFC;
+    letter-spacing: -0.4px;
 }}
 QLabel#heroTime {{
     font-size: 22px;
@@ -338,7 +380,7 @@ QLabel#statusOk {{
     font-weight: 600;
 }}
 QLabel#statusBad {{
-    color: #f07178;
+    color: #EF4444;
     font-weight: 600;
 }}
 
@@ -346,7 +388,7 @@ QLabel#statusBad {{
 QFrame#card {{
     background-color: {_SCD};
     border: 1px solid {_BC_D};
-    border-radius: 14px;
+    border-radius: 16px;
 }}
 QFrame#cardWarning {{
     background-color: {_SCD};
@@ -358,6 +400,24 @@ QFrame#loginCard {{
     border: 1px solid {_BC_D};
     border-radius: 12px;
 }}
+QFrame#loginProfileCard {{
+    background-color: {_SCD};
+    border: 1px solid {_BC_D};
+    border-radius: 12px;
+}}
+QFrame#loginProfileCard QLineEdit,
+QFrame#loginProfileCard QComboBox {{
+    padding: 10px 12px;
+    min-height: 22px;
+    font-size: 14px;
+    border-radius: 8px;
+}}
+QFrame#loginProfileCard QPushButton#ghost {{
+    padding: 6px 12px;
+    min-height: 16px;
+    font-size: 12px;
+    border-radius: 8px;
+}}
 QFrame#loginFormSeparator {{
     background-color: {_BC_D};
     border: none;
@@ -365,46 +425,330 @@ QFrame#loginFormSeparator {{
     margin-bottom: 4px;
 }}
 QLabel#loginTitle {{
-    font-size: 14px;
-    font-weight: 600;
-    color: #e8eaef;
+    font-size: 20px;
+    font-weight: 700;
+    color: #F8FAFC;
     letter-spacing: -0.02em;
-    margin-bottom: 0px;
+    margin-bottom: 2px;
 }}
 QLabel#loginFieldLabel {{
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
-    color: #8b95a8;
-    margin-top: 2px;
+    color: #94A3B8;
+    margin-top: 4px;
 }}
 QLabel#loginFooter {{
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.45;
-    color: #8b95a8;
-    padding: 14px 16px 10px 16px;
+    color: #94A3B8;
+    padding: 12px 16px 8px 16px;
     margin-top: 12px;
     margin-bottom: 4px;
     border-top: 1px solid {_BC_D};
 }}
 QFrame#loginCard QLineEdit,
 QFrame#loginCard QComboBox {{
-    padding: 6px 10px;
-    min-height: 16px;
-    font-size: 13px;
+    padding: 10px 12px;
+    min-height: 22px;
+    font-size: 14px;
     border-radius: 8px;
 }}
 QFrame#loginCard QPushButton#primary {{
-    padding: 8px 12px;
-    min-height: 16px;
-    font-size: 13px;
-    border-radius: 8px;
-    margin-top: 2px;
+    padding: 10px 12px;
+    min-height: 24px;
+    font-size: 14px;
+    border-radius: 10px;
+    margin-top: 6px;
 }}
 QFrame#loginCard QPushButton#ghost {{
     padding: 6px 12px;
     min-height: 16px;
     font-size: 12px;
     border-radius: 8px;
+}}
+
+/* ---- Login split (POS dashboard style) ---- */
+QWidget#loginShell {{
+    background-color: #f8fafc;
+}}
+QFrame#loginLeftPanel {{
+    border: none;
+    background-color: #0f766e;
+}}
+QFrame#loginLeftOverlay {{
+    background-color: rgba(0, 0, 0, 0.48);
+    border: none;
+}}
+QLabel#loginBrandTitle {{
+    color: #ffffff;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}}
+QLabel#loginBrandTagline {{
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    line-height: 1.5;
+}}
+QFrame#loginRightPanel {{
+    background-color: #f8fafc;
+    border: none;
+}}
+QFrame#loginShopToolbar {{
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}}
+QFrame#loginShopToolbar QComboBox {{
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 28px;
+    font-size: 14px;
+    color: #0f172a;
+}}
+QFrame#loginShopToolbar QComboBox:focus {{
+    border: 1px solid #0f766e;
+}}
+QFrame#loginShopToolbar QComboBox:hover {{
+    background-color: #f8fafc;
+}}
+QFrame#loginShopToolbar QPushButton#ghost {{
+    background-color: transparent;
+    border: none;
+    color: #0f766e;
+    font-weight: 600;
+    padding: 8px 12px;
+}}
+QFrame#loginShopToolbar QPushButton#ghost:hover {{
+    background-color: rgba(15, 118, 110, 0.08);
+    color: #0d5f5a;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard,
+QFrame#loginRightPanel QFrame#loginCard,
+QFrame#loginRightPanel QFrame#loginProfileCard {{
+    background-color: #ffffff;
+    border: none;
+    border-radius: 16px;
+}}
+/* Inner surfaces: override app-wide dark QWidget fill on the light card (scoped so loginProfileCard stays white) */
+QFrame#loginRightPanel QFrame#loginOuterCard > QWidget#loginShopBlock,
+QFrame#loginRightPanel QFrame#loginOuterCard > QStackedWidget#loginMainStack {{
+    background-color: transparent;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QStackedWidget#loginMainStack > QScrollArea#loginSigninScroll,
+QFrame#loginRightPanel QFrame#loginOuterCard QStackedWidget#loginMainStack > QScrollArea#loginSignupScroll {{
+    background-color: transparent;
+    border: none;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QScrollArea > QWidget > QWidget {{
+    background-color: transparent;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QWidget#loginSigninPage QWidget,
+QFrame#loginRightPanel QFrame#loginOuterCard QWidget#loginSignupPage QWidget {{
+    background-color: transparent;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QFrame#loginProfileCard {{
+    background-color: #ffffff;
+    border: none;
+    border-radius: 16px;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel {{
+    color: #475569;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel#loginWelcomeHead {{
+    color: #0f172a;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}}
+QFrame#loginRightPanel QLabel#loginTitle {{
+    color: #0f172a;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel#loginFieldLabel,
+QFrame#loginRightPanel QFrame#loginCard QLabel#loginFieldLabel,
+QFrame#loginRightPanel QFrame#loginProfileCard QLabel#loginFieldLabel {{
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 500;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel#muted,
+QFrame#loginRightPanel QFrame#loginCard QLabel#muted,
+QFrame#loginRightPanel QFrame#loginProfileCard QLabel#muted {{
+    color: #64748b;
+    font-size: 14px;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLineEdit,
+QFrame#loginRightPanel QFrame#loginCard QLineEdit,
+QFrame#loginRightPanel QFrame#loginProfileCard QLineEdit {{
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 9px 11px;
+    min-height: 36px;
+    font-size: 14px;
+    color: #0f172a;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLineEdit:focus,
+QFrame#loginRightPanel QFrame#loginCard QLineEdit:focus,
+QFrame#loginRightPanel QFrame#loginProfileCard QLineEdit:focus {{
+    border: 2px solid #0f766e;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#primary,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#primary,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#primary {{
+    background-color: #0f766e;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 11px 16px;
+    min-height: 40px;
+    margin-top: 8px;
+    font-weight: 700;
+    font-size: 14px;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#primary:hover,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#primary:hover,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#primary:hover {{
+    background-color: #0d5f5a;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#ghost,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#ghost,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#ghost {{
+    background-color: transparent;
+    border: none;
+    color: #0f766e;
+    border-radius: 8px;
+    padding: 10px 8px;
+    font-weight: 600;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#ghost:hover,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#ghost:hover,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#ghost:hover {{
+    background-color: rgba(15, 118, 110, 0.07);
+    color: #0d5f5a;
+}}
+QFrame#loginRightPanel QFrame#loginFormSeparator {{
+    background-color: #e2e8f0;
+    border: none;
+    max-height: 1px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}}
+QLabel#loginAccountLinkPrompt {{
+    color: #64748b;
+    font-size: 13px;
+}}
+QPushButton#loginLinkButton {{
+    background: transparent;
+    border: none;
+    color: #0f766e;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 2px 6px;
+    min-height: 0;
+    qproperty-cursor: PointingHandCursor;
+}}
+QPushButton#loginLinkButton:hover {{
+    color: #0d5f5a;
+}}
+QFrame#loginRightPanel QLabel#loginFooter {{
+    color: #64748b;
+    border-top: 1px solid #e2e8f0;
+    background: transparent;
+    padding-top: 12px;
+    margin-top: 8px;
+}}
+QFrame#loginRightPanel QLabel#errorText {{
+    color: #dc2626;
+    font-size: 13px;
+    padding-top: 4px;
+}}
+QLabel#loginLockBadge {{
+    background-color: #0f766e;
+    border-radius: 12px;
+    min-width: 40px;
+    min-height: 40px;
+    max-width: 40px;
+    max-height: 40px;
+    padding: 8px;
+    qproperty-alignment: AlignCenter;
+}}
+QPushButton#loginPasswordToggle {{
+    background: transparent;
+    border: none;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 8px;
+}}
+QPushButton#loginPasswordToggle:hover {{
+    background-color: rgba(15, 23, 42, 0.06);
+}}
+QCheckBox#loginRememberCheck {{
+    color: #475569;
+    font-size: 13px;
+    font-weight: 500;
+    spacing: 8px;
+}}
+QCheckBox#loginRememberCheck::indicator {{
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+}}
+QCheckBox#loginRememberCheck::indicator:checked {{
+    background-color: #0f766e;
+    border-color: #0f766e;
+}}
+QPushButton#loginForgotLink {{
+    background: transparent;
+    border: none;
+    color: #0f766e;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 4px 8px;
+    min-height: 0;
+}}
+QPushButton#loginForgotLink:hover {{
+    color: #0d5f5a;
+    text-decoration: underline;
+}}
+QPushButton#loginOutlineButton {{
+    background-color: #ffffff;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 11px 16px;
+    min-height: 40px;
+    font-weight: 600;
+    font-size: 14px;
+}}
+QPushButton#loginOutlineButton:hover {{
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+}}
+QWidget#loginSecureStrip {{
+    background-color: rgba(15, 118, 110, 0.08);
+    border: 1px solid rgba(15, 118, 110, 0.2);
+    border-radius: 10px;
+}}
+QLabel#loginSecureBanner {{
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 500;
+}}
+QLabel#loginOrLabel {{
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0 8px;
 }}
 
 /* ---- Buttons ---- */
@@ -416,6 +760,12 @@ QPushButton {{
     padding: 10px 18px;
     min-height: 22px;
     font-weight: 500;
+    qproperty-cursor: PointingHandCursor;
+}}
+QPushButton[hasIcon="true"] {{
+    /* Keep icon/text balance consistent across all screens. */
+    padding-left: 14px;
+    padding-right: 16px;
 }}
 QPushButton:hover {{
     background-color: {_SED};
@@ -473,12 +823,12 @@ QPushButton#qtyAdjBtn:pressed {{
 }}
 
 QPushButton#danger {{
-    background-color: #5c2b35;
-    color: #f5c6cb;
-    border: 1px solid #8b3a48;
+    background-color: #EF4444;
+    color: #ffffff;
+    border: 1px solid #EF4444;
 }}
 QPushButton#danger:hover {{
-    background-color: #702f3a;
+    background-color: #dc2626;
 }}
 
 QPushButton#success {{
@@ -497,10 +847,10 @@ QPushButton#success:hover {{
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     background-color: {_SED};
     border: 1px solid {_BC_D_S};
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 9px 12px;
     min-height: 22px;
-    color: #e8eaef;
+    color: #F8FAFC;
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
     border: 1px solid {_ACCENT};
@@ -509,6 +859,9 @@ QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
 QComboBox::drop-down {{
     border: none;
     width: 32px;
+}}
+QComboBox {{
+    qproperty-cursor: PointingHandCursor;
 }}
 QComboBox QAbstractItemView {{
     background-color: {_SCD};
@@ -565,7 +918,7 @@ QTableWidget, QTableView {{
     border-radius: 14px;
 }}
 QTableWidget::item, QTableView::item {{
-    padding: 8px;
+    padding: 10px 12px;
     border: none;
 }}
 QTableWidget::item:selected, QTableView::item:selected {{
@@ -578,7 +931,7 @@ QTableWidget::item:hover:!selected, QTableView::item:hover:!selected {{
 QHeaderView::section {{
     background-color: {_SCD};
     color: #b4bcc8;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border: none;
     border-bottom: 2px solid {_BC_D};
     font-weight: 600;
@@ -589,6 +942,13 @@ QHeaderView::section {{
 
 QWidget#dashboardInner {{
     background-color: transparent;
+}}
+
+/* Login brand panel: feature rows are plain QWidgets; global QWidget fill must not cover teal paint. */
+QWidget#loginBrandFeature,
+QWidget#loginBrandFeatureCol {{
+    background-color: transparent;
+    border: none;
 }}
 
 QTabWidget::pane {{
@@ -694,9 +1054,9 @@ QDialog {{
 QTextEdit, QPlainTextEdit {{
     background-color: {_SED};
     border: 1px solid {_BC_D_S};
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 10px;
-    color: #e8eaef;
+    color: #F8FAFC;
 }}
 
 QDialogButtonBox QPushButton {{
@@ -721,9 +1081,9 @@ QLabel#shopLogo[logoState="empty"] {{
 _LIGHT_QSS = f"""
 QMainWindow, QWidget {{
     background-color: {_SBL};
-    color: #1a1f28;
-    font-family: "Segoe UI", "SF Pro Text", system-ui, sans-serif;
-    font-size: 13px;
+    color: #0f172a;
+    font-family: "Inter", "Segoe UI", "SF Pro Text", system-ui, sans-serif;
+    font-size: 14px;
     selection-background-color: {_ACCENT};
     selection-color: #ffffff;
 }}
@@ -799,7 +1159,7 @@ QFrame#topBar {{
     border-bottom: 1px solid {_BC_L};
 }}
 QFrame#topBar QLabel {{
-    color: #4a5568;
+    color: #334155;
     font-size: 13px;
 }}
 
@@ -808,7 +1168,7 @@ QFrame#appFooter {{
     border-top: 1px solid {_BC_L};
 }}
 QLabel#appFooterText {{
-    color: #6b7280;
+    color: #475569;
     font-size: 11px;
 }}
 
@@ -824,7 +1184,7 @@ QLabel#pageTitle {{
 }}
 QLabel#pageSubtitle {{
     font-size: 13px;
-    color: #6b7280;
+    color: #475569;
 }}
 QLabel#sidebarBrandName {{
     font-size: 15px;
@@ -833,10 +1193,10 @@ QLabel#sidebarBrandName {{
 }}
 QLabel#sidebarBrandTag {{
     font-size: 11px;
-    color: #6b7280;
+    color: #475569;
 }}
 QLabel#topBarUser {{
-    color: #4b5563;
+    color: #334155;
     font-size: 13px;
     max-width: 220px;
 }}
@@ -970,7 +1330,7 @@ QLabel#section {{
     color: #2d3748;
 }}
 QLabel#muted {{
-    color: #6b7280;
+    color: #475569;
     font-size: 12px;
 }}
 QLabel#kpiValue {{
@@ -983,6 +1343,17 @@ QLabel#kpiValueSm {{
     font-size: 16px;
     font-weight: 700;
     color: #1a1f28;
+}}
+QFrame#posTotalCard {{
+    background-color: {_SEL};
+    border: 1px solid {_ACCENT};
+    border-radius: 12px;
+}}
+QLabel#posTotalValue {{
+    font-size: 30px;
+    font-weight: 800;
+    color: #111827;
+    letter-spacing: -0.4px;
 }}
 QLabel#heroTime {{
     font-size: 22px;
@@ -1027,6 +1398,24 @@ QFrame#loginCard {{
     border: 1px solid {_BC_L};
     border-radius: 12px;
 }}
+QFrame#loginProfileCard {{
+    background-color: {_SCL};
+    border: 1px solid {_BC_L};
+    border-radius: 12px;
+}}
+QFrame#loginProfileCard QLineEdit,
+QFrame#loginProfileCard QComboBox {{
+    padding: 10px 12px;
+    min-height: 22px;
+    font-size: 14px;
+    border-radius: 8px;
+}}
+QFrame#loginProfileCard QPushButton#ghost {{
+    padding: 6px 12px;
+    min-height: 16px;
+    font-size: 12px;
+    border-radius: 8px;
+}}
 QFrame#loginFormSeparator {{
     background-color: {_BC_L};
     border: none;
@@ -1034,46 +1423,329 @@ QFrame#loginFormSeparator {{
     margin-bottom: 4px;
 }}
 QLabel#loginTitle {{
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: 700;
     color: #111827;
     letter-spacing: -0.02em;
-    margin-bottom: 0px;
+    margin-bottom: 2px;
 }}
 QLabel#loginFieldLabel {{
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     color: #6b7280;
-    margin-top: 2px;
+    margin-top: 4px;
 }}
 QLabel#loginFooter {{
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.45;
     color: #6b7280;
-    padding: 14px 16px 10px 16px;
+    padding: 12px 16px 8px 16px;
     margin-top: 12px;
     margin-bottom: 4px;
     border-top: 1px solid #e5e7eb;
 }}
 QFrame#loginCard QLineEdit,
 QFrame#loginCard QComboBox {{
-    padding: 6px 10px;
-    min-height: 16px;
-    font-size: 13px;
+    padding: 10px 12px;
+    min-height: 22px;
+    font-size: 14px;
     border-radius: 8px;
 }}
 QFrame#loginCard QPushButton#primary {{
-    padding: 8px 12px;
-    min-height: 16px;
-    font-size: 13px;
-    border-radius: 8px;
-    margin-top: 2px;
+    padding: 10px 12px;
+    min-height: 24px;
+    font-size: 14px;
+    border-radius: 10px;
+    margin-top: 6px;
 }}
 QFrame#loginCard QPushButton#ghost {{
     padding: 6px 12px;
     min-height: 16px;
     font-size: 12px;
     border-radius: 8px;
+}}
+
+QWidget#loginShell {{
+    background-color: #f8fafc;
+}}
+QFrame#loginLeftPanel {{
+    border: none;
+    background-color: #0f766e;
+}}
+QFrame#loginLeftOverlay {{
+    background-color: rgba(0, 0, 0, 0.48);
+    border: none;
+}}
+QLabel#loginBrandTitle {{
+    color: #ffffff;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}}
+QLabel#loginBrandTagline {{
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 14px;
+    line-height: 1.5;
+}}
+QFrame#loginRightPanel {{
+    background-color: #f8fafc;
+    border: none;
+}}
+QFrame#loginShopToolbar {{
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+}}
+QFrame#loginShopToolbar QComboBox {{
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 28px;
+    font-size: 14px;
+    color: #0f172a;
+}}
+QFrame#loginShopToolbar QComboBox:focus {{
+    border: 1px solid #0f766e;
+}}
+QFrame#loginShopToolbar QComboBox:hover {{
+    background-color: #f8fafc;
+}}
+QFrame#loginShopToolbar QPushButton#ghost {{
+    background-color: transparent;
+    border: none;
+    color: #0f766e;
+    font-weight: 600;
+    padding: 8px 12px;
+}}
+QFrame#loginShopToolbar QPushButton#ghost:hover {{
+    background-color: rgba(15, 118, 110, 0.08);
+    color: #0d5f5a;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard,
+QFrame#loginRightPanel QFrame#loginCard,
+QFrame#loginRightPanel QFrame#loginProfileCard {{
+    background-color: #ffffff;
+    border: none;
+    border-radius: 16px;
+}}
+/* Inner surfaces: override app-wide dark QWidget fill on the light card (scoped so loginProfileCard stays white) */
+QFrame#loginRightPanel QFrame#loginOuterCard > QWidget#loginShopBlock,
+QFrame#loginRightPanel QFrame#loginOuterCard > QStackedWidget#loginMainStack {{
+    background-color: transparent;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QStackedWidget#loginMainStack > QScrollArea#loginSigninScroll,
+QFrame#loginRightPanel QFrame#loginOuterCard QStackedWidget#loginMainStack > QScrollArea#loginSignupScroll {{
+    background-color: transparent;
+    border: none;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QScrollArea > QWidget > QWidget {{
+    background-color: transparent;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QWidget#loginSigninPage QWidget,
+QFrame#loginRightPanel QFrame#loginOuterCard QWidget#loginSignupPage QWidget {{
+    background-color: transparent;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QFrame#loginProfileCard {{
+    background-color: #ffffff;
+    border: none;
+    border-radius: 16px;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel {{
+    color: #475569;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel#loginWelcomeHead {{
+    color: #0f172a;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}}
+QFrame#loginRightPanel QLabel#loginTitle {{
+    color: #0f172a;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel#loginFieldLabel,
+QFrame#loginRightPanel QFrame#loginCard QLabel#loginFieldLabel,
+QFrame#loginRightPanel QFrame#loginProfileCard QLabel#loginFieldLabel {{
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 500;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLabel#muted,
+QFrame#loginRightPanel QFrame#loginCard QLabel#muted,
+QFrame#loginRightPanel QFrame#loginProfileCard QLabel#muted {{
+    color: #64748b;
+    font-size: 14px;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLineEdit,
+QFrame#loginRightPanel QFrame#loginCard QLineEdit,
+QFrame#loginRightPanel QFrame#loginProfileCard QLineEdit {{
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 9px 11px;
+    min-height: 36px;
+    font-size: 14px;
+    color: #0f172a;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QLineEdit:focus,
+QFrame#loginRightPanel QFrame#loginCard QLineEdit:focus,
+QFrame#loginRightPanel QFrame#loginProfileCard QLineEdit:focus {{
+    border: 2px solid #0f766e;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#primary,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#primary,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#primary {{
+    background-color: #0f766e;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 11px 16px;
+    min-height: 40px;
+    margin-top: 8px;
+    font-weight: 700;
+    font-size: 14px;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#primary:hover,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#primary:hover,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#primary:hover {{
+    background-color: #0d5f5a;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#ghost,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#ghost,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#ghost {{
+    background-color: transparent;
+    border: none;
+    color: #0f766e;
+    border-radius: 8px;
+    padding: 10px 8px;
+    font-weight: 600;
+}}
+QFrame#loginRightPanel QFrame#loginOuterCard QPushButton#ghost:hover,
+QFrame#loginRightPanel QFrame#loginCard QPushButton#ghost:hover,
+QFrame#loginRightPanel QFrame#loginProfileCard QPushButton#ghost:hover {{
+    background-color: rgba(15, 118, 110, 0.07);
+    color: #0d5f5a;
+}}
+QFrame#loginRightPanel QFrame#loginFormSeparator {{
+    background-color: #e2e8f0;
+    border: none;
+    max-height: 1px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+}}
+QLabel#loginAccountLinkPrompt {{
+    color: #64748b;
+    font-size: 13px;
+}}
+QPushButton#loginLinkButton {{
+    background: transparent;
+    border: none;
+    color: #0f766e;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 2px 6px;
+    min-height: 0;
+    qproperty-cursor: PointingHandCursor;
+}}
+QPushButton#loginLinkButton:hover {{
+    color: #0d5f5a;
+}}
+QFrame#loginRightPanel QLabel#loginFooter {{
+    color: #64748b;
+    border-top: 1px solid #e2e8f0;
+    background: transparent;
+    padding-top: 12px;
+    margin-top: 8px;
+}}
+QFrame#loginRightPanel QLabel#errorText {{
+    color: #dc2626;
+    font-size: 13px;
+    padding-top: 4px;
+}}
+QLabel#loginLockBadge {{
+    background-color: #0f766e;
+    border-radius: 12px;
+    min-width: 40px;
+    min-height: 40px;
+    max-width: 40px;
+    max-height: 40px;
+    padding: 8px;
+    qproperty-alignment: AlignCenter;
+}}
+QPushButton#loginPasswordToggle {{
+    background: transparent;
+    border: none;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 8px;
+}}
+QPushButton#loginPasswordToggle:hover {{
+    background-color: rgba(15, 23, 42, 0.06);
+}}
+QCheckBox#loginRememberCheck {{
+    color: #475569;
+    font-size: 13px;
+    font-weight: 500;
+    spacing: 8px;
+}}
+QCheckBox#loginRememberCheck::indicator {{
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+}}
+QCheckBox#loginRememberCheck::indicator:checked {{
+    background-color: #0f766e;
+    border-color: #0f766e;
+}}
+QPushButton#loginForgotLink {{
+    background: transparent;
+    border: none;
+    color: #0f766e;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 4px 8px;
+    min-height: 0;
+}}
+QPushButton#loginForgotLink:hover {{
+    color: #0d5f5a;
+    text-decoration: underline;
+}}
+QPushButton#loginOutlineButton {{
+    background-color: #ffffff;
+    color: #0f172a;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 11px 16px;
+    min-height: 40px;
+    font-weight: 600;
+    font-size: 14px;
+}}
+QPushButton#loginOutlineButton:hover {{
+    background-color: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+}}
+QWidget#loginSecureStrip {{
+    background-color: rgba(15, 118, 110, 0.08);
+    border: 1px solid rgba(15, 118, 110, 0.2);
+    border-radius: 10px;
+}}
+QLabel#loginSecureBanner {{
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 500;
+}}
+QLabel#loginOrLabel {{
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0 8px;
 }}
 
 QPushButton {{
@@ -1084,6 +1756,11 @@ QPushButton {{
     padding: 10px 18px;
     min-height: 22px;
     font-weight: 500;
+}}
+QPushButton[hasIcon="true"] {{
+    /* Keep icon/text balance consistent across all screens. */
+    padding-left: 14px;
+    padding-right: 16px;
 }}
 QPushButton:hover {{
     background-color: {_NAV_HOVER_BG_L};
@@ -1163,7 +1840,7 @@ QPushButton#success:hover {{
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     background-color: {_SCL};
     border: 1px solid #c5cdd8;
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 9px 12px;
     min-height: 22px;
     color: #1a1f28;
@@ -1252,6 +1929,13 @@ QHeaderView::section {{
 
 QWidget#dashboardInner {{
     background-color: transparent;
+}}
+
+/* Login brand panel: feature rows are plain QWidgets; global QWidget fill must not cover teal paint. */
+QWidget#loginBrandFeature,
+QWidget#loginBrandFeatureCol {{
+    background-color: transparent;
+    border: none;
 }}
 
 QTabWidget::pane {{
@@ -1352,7 +2036,7 @@ QDialog {{
 QTextEdit, QPlainTextEdit {{
     background-color: {_SCL};
     border: 1px solid #c5cdd8;
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 10px;
     color: #1a1f28;
 }}
@@ -1377,11 +2061,12 @@ QLabel#shopLogo[logoState="empty"] {{
 
 
 def get_qt_stylesheet(appearance: str) -> str:
-    """Return full application QSS for ``dark`` or ``light``."""
-    if (appearance or "").lower() == "light":
+    """Return full application QSS for the requested appearance."""
+    appearance_key = (appearance or "").strip().lower()
+    if appearance_key == "light":
         return _LIGHT_QSS
     return _DARK_QSS
 
 
-# Default export for imports that expect a single string (dark).
+# Default export for imports that expect a single string.
 APPLIED_STYLESHEET = _DARK_QSS

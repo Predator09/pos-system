@@ -29,13 +29,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import PAD_MD
+from app.config import PAD_LG, PAD_MD, PAD_SM
 from app.services.parked_sales_service import MAX_PARKED_TICKETS, ParkedSalesService
 from app.services.product_service import ProductService
 from app.services.sales_service import SalesService, cashier_display_name
+from app.ui_qt.presenters.sales_presenter import SalesPresenter
 
-from app.ui_qt.dialogs_qt import PickProductDialogQt, ReceiptPreviewDialogQt, RecallParkedDialogQt
+from app.ui_qt.dialogs_qt import (
+    CreditMemoPreviewDialogQt,
+    PickProductDialogQt,
+    ProcessReturnDialogQt,
+    ReceiptPreviewDialogQt,
+    RecallParkedDialogQt,
+)
 from app.ui_qt.helpers_qt import ask_yes_no, ask_yes_no_cancel, format_money, info_message, warning_message
+from app.ui_qt.icon_utils import set_button_icon
 
 # ===== CONSTANTS =====
 _CART_COLS = ("code", "name", "qty", "price", "disc", "total")
@@ -44,9 +52,9 @@ _CART_TABLE_MAX_ROWS = 18
 _CART_TABLE_ROW_PX = 36
 _QTY_STEP = 1.0
 _QTY_BTN_SIZE = 24
-_QTY_SPINBOX_WIDTH = 76
+_QTY_SPINBOX_WIDTH = 96
 _QTY_SPIN_HEIGHT = 28
-_QTY_COL_WIDTH = 142
+_QTY_COL_WIDTH = 168
 
 
 # ===== QUANTITY ADJUSTMENT WIDGET =====
@@ -115,6 +123,10 @@ class ScanAddWidget(QWidget):
         title = QLabel("Scan & add")
         title.setObjectName("pageSubtitle")
         layout.addWidget(title)
+        hint = QLabel("Search by product code, barcode, or name, then add to cart.")
+        hint.setObjectName("muted")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
         
         # Grid: Qty + Lookup + Add/Browse buttons
         grid = QGridLayout()
@@ -150,10 +162,13 @@ class ScanAddWidget(QWidget):
         grid.addWidget(self.add_btn, 1, 2, alignment=Qt.AlignTop)
         
         self.browse_btn = QPushButton("Browse")
+        self.browse_btn.setObjectName("ghost")
         self.browse_btn.setCursor(Qt.PointingHandCursor)
         self.browse_btn.setFixedHeight(36)
         self.browse_btn.setMinimumWidth(88)
         grid.addWidget(self.browse_btn, 1, 3, alignment=Qt.AlignTop)
+        set_button_icon(self.add_btn, "fa5s.cart-plus")
+        set_button_icon(self.browse_btn, "fa5s.search")
         
         grid.setColumnStretch(1, 1)
         layout.addLayout(grid)
@@ -201,6 +216,8 @@ class CartTableWidget(QWidget):
         self.table.setHorizontalHeaderLabels(["Code", "Product", "Qty", "Price", "Disc", "Line"])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
         self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(_CART_TABLE_ROW_PX)
@@ -221,6 +238,9 @@ class CartTableWidget(QWidget):
         
         self.discount_btn = self._make_action_btn("Discount")
         self.remove_btn = self._make_action_btn("Remove")
+        self.remove_btn.setObjectName("danger")
+        set_button_icon(self.discount_btn, "fa5s.percent")
+        set_button_icon(self.remove_btn, "fa5s.trash-alt")
 
         act_row0.addWidget(self.discount_btn)
         act_row0.addWidget(self.remove_btn)
@@ -236,10 +256,17 @@ class CartTableWidget(QWidget):
         
         self.park_btn = self._make_action_btn("Park")
         self.recall_btn = self._make_action_btn("Recall")
+        self.return_btn = self._make_action_btn("Return")
         self.clear_btn = self._make_action_btn("Clear cart", min_w=100)
+        self.clear_btn.setObjectName("danger")
+        set_button_icon(self.park_btn, "fa5s.pause-circle")
+        set_button_icon(self.recall_btn, "fa5s.undo")
+        set_button_icon(self.return_btn, "fa5s.reply")
+        set_button_icon(self.clear_btn, "fa5s.times-circle")
         
         act_row1.addWidget(self.park_btn)
         act_row1.addWidget(self.recall_btn)
+        act_row1.addWidget(self.return_btn)
         act_row1.addStretch(1)
         act_row1.addWidget(self.clear_btn)
         layout.addLayout(act_row1)
@@ -290,13 +317,19 @@ class CheckoutWidget(QWidget):
         layout.addWidget(sep)
         
         # Total row
-        tot_row = QHBoxLayout()
-        tot_row.addWidget(QLabel("Total"))
+        tot_card = QFrame()
+        tot_card.setObjectName("posTotalCard")
+        tot_row = QHBoxLayout(tot_card)
+        tot_row.setContentsMargins(12, 10, 12, 10)
+        tot_row.setSpacing(10)
+        total_caption = QLabel("Total")
+        total_caption.setObjectName("section")
+        tot_row.addWidget(total_caption)
         self.total_lbl = QLabel()
-        self.total_lbl.setObjectName("kpiValue")
+        self.total_lbl.setObjectName("posTotalValue")
         tot_row.addStretch(1)
         tot_row.addWidget(self.total_lbl)
-        layout.addLayout(tot_row)
+        layout.addWidget(tot_card)
         
         # Payment method
         pay_grid = QGridLayout()
@@ -334,15 +367,18 @@ class CheckoutWidget(QWidget):
         
         # Action buttons
         self.complete_btn = QPushButton("Complete sale")
-        self.complete_btn.setObjectName("primary")
+        self.complete_btn.setObjectName("success")
         self.complete_btn.setCursor(Qt.PointingHandCursor)
         self.complete_btn.setMinimumHeight(44)
         layout.addWidget(self.complete_btn)
+        set_button_icon(self.complete_btn, "fa5s.check-circle")
         
         self.new_cart_btn = QPushButton("New cart")
+        self.new_cart_btn.setObjectName("danger")
         self.new_cart_btn.setCursor(Qt.PointingHandCursor)
         self.new_cart_btn.setMinimumHeight(36)
         layout.addWidget(self.new_cart_btn)
+        set_button_icon(self.new_cart_btn, "fa5s.ban")
         
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -358,15 +394,17 @@ class SalesView(QWidget):
     def __init__(self, main_window, parent=None):
         super().__init__(parent)
         self._main = main_window
-        self._sales = SalesService()
-        self._products = ProductService()
-        self._parked_svc = ParkedSalesService()
+        self._presenter = SalesPresenter(SalesService(), ProductService(), ParkedSalesService())
+        self._sales = self._presenter.sales_service
+        self._products = self._presenter.product_service
+        self._parked_svc = self._presenter.parked_service
         
         # State
         self.cart: list[dict] = []
         self._parked: list[dict] = []
         self._kpi_labels: dict[str, QLabel] = {}
         self._payment_var = "CASH"
+        self._cart_row_signatures: list[tuple] = []
         
         # Clock
         self._clock_timer = QTimer(self)
@@ -384,7 +422,7 @@ class SalesView(QWidget):
     def _build_ui(self):
         """Construct the complete sales view layout."""
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(PAD_SM, PAD_SM, PAD_SM, PAD_SM)
         root.setSpacing(PAD_MD)
         
         # Top KPI bar + clock
@@ -393,7 +431,7 @@ class SalesView(QWidget):
         
         # Main: left (scan + cart) + right (checkout)
         body = QHBoxLayout()
-        body.setSpacing(PAD_MD)
+        body.setSpacing(PAD_LG)
         
         # Left column
         left_col = QVBoxLayout()
@@ -420,18 +458,19 @@ class SalesView(QWidget):
         self._top_bar = QFrame()
         self._top_bar.setObjectName("card")
         top_row = QHBoxLayout(self._top_bar)
-        top_row.setContentsMargins(12, 8, 12, 8)
-        top_row.setSpacing(16)
+        top_row.setContentsMargins(PAD_MD, PAD_SM, PAD_MD, PAD_SM)
+        top_row.setSpacing(PAD_MD)
         
         for key, title in (
             ("invoices", "Invoices"),
-            ("gross", "Gross"),
+            ("net", "Net sales"),
+            ("refunds", "Refunds"),
             ("cash", "Cash"),
             ("lines", "Cart lines"),
             ("parked", "Parked"),
         ):
             cell = QVBoxLayout()
-            cell.setSpacing(2)
+            cell.setSpacing(PAD_SM // 2)
             tl = QLabel(title)
             tl.setObjectName("muted")
             cell.addWidget(tl)
@@ -458,6 +497,7 @@ class SalesView(QWidget):
         self._cart_widget.remove_btn.clicked.connect(self._remove_selected_line)
         self._cart_widget.park_btn.clicked.connect(self._park_sale)
         self._cart_widget.recall_btn.clicked.connect(self._recall_parked)
+        self._cart_widget.return_btn.clicked.connect(self._process_return)
         self._cart_widget.clear_btn.clicked.connect(self._confirm_clear_cart)
         
         # Payment
@@ -484,28 +524,13 @@ class SalesView(QWidget):
             return 0.0
     
     def _qty_in_cart_for(self, product_id: int) -> float:
-        t = 0.0
-        for it in self.cart:
-            if it["product_id"] == product_id:
-                t += float(it["quantity"])
-        return t
+        return self._presenter.qty_in_cart_for(self.cart, product_id)
     
     def _resolve_product(self, query: str):
-        q = query.strip()
-        if not q:
-            return None
-        by_code = self._products.get_product_by_code(q)
-        if by_code:
-            return by_code
-        by_bc = self._products.get_product_by_barcode(q)
-        if by_bc:
-            return by_bc
-        if len(q) < 2:
-            return []
-        return self._products.search_products(q)
+        return self._presenter.resolve_product(query)
     
     def _ensure_sellable(self, p: dict) -> bool:
-        if not p.get("is_active"):
+        if not self._presenter.is_sellable(p):
             warning_message(self.window(), "SmartStock", "This product is inactive.")
             return False
         return True
@@ -524,43 +549,26 @@ class SalesView(QWidget):
         )
     
     def _stock_available(self, p: dict, add_qty: float) -> bool:
-        pid = int(p["id"])
-        have = float(p.get("quantity_in_stock") or 0)
-        in_cart = self._qty_in_cart_for(pid)
-        if in_cart + add_qty <= have + 1e-9:
+        ok, detail = self._presenter.stock_available(self.cart, p, add_qty)
+        if ok:
             return True
-        detail = (
-            f"Not enough stock for {p.get('name', '')}.\n"
-            f"On hand: {have:g}, already in cart: {in_cart:g}, adding: {add_qty:g}."
-        )
         if self._offer_stock_override("Stock", detail):
             return True
-        warning_message(self.window(), "Stock", detail.replace("\n", " "))
+        warning_message(self.window(), "Stock", detail)
         return False
     
     def _line_qty_stock_ok(self, product_id: int, current_line_qty: float, new_line_qty: float) -> bool:
-        p = self._products.get_product(product_id)
-        if not p:
+        ok, detail = self._presenter.line_qty_stock_ok(self.cart, product_id, current_line_qty, new_line_qty)
+        if ok:
             return True
-        have = float(p.get("quantity_in_stock") or 0)
-        in_other = self._qty_in_cart_for(product_id) - float(current_line_qty)
-        need = in_other + float(new_line_qty)
-        if need <= have + 1e-9:
-            return True
-        detail = (
-            f"Not enough stock for {p.get('name', '')}.\n"
-            f"On hand: {have:g}, need for this line: {need:g}."
-        )
         if self._offer_stock_override("Stock", detail):
             return True
-        warning_message(self.window(), "Stock", detail.replace("\n", " "))
+        warning_message(self.window(), "Stock", detail)
         return False
     
     @staticmethod
     def _line_total(item: dict) -> float:
-        gross = float(item["quantity"]) * float(item["unit_price"])
-        disc = float(item.get("discount_amount") or 0)
-        return round(max(0.0, gross - disc), 2)
+        return SalesPresenter.line_total(item)
     
     # ===== PRODUCT MANAGEMENT =====
     
@@ -787,36 +795,77 @@ class SalesView(QWidget):
         widget.spin.editingFinished.connect(lambda: self._cart_qty_commit(pid, widget.spin.value()))
         
         return widget
+
+    @staticmethod
+    def _set_readonly_text_cell(table: QTableWidget, row: int, col: int, value: str) -> None:
+        cell = table.item(row, col)
+        if cell is None:
+            cell = QTableWidgetItem(value)
+            cell.setFlags(cell.flags() & ~Qt.ItemIsEditable)
+            table.setItem(row, col, cell)
+            return
+        if cell.text() != value:
+            cell.setText(value)
+
+    def _cart_row_signature(self, it: dict) -> tuple:
+        """Stable snapshot used to update only changed cart rows."""
+        return (
+            int(it["product_id"]),
+            str(it.get("code") or ""),
+            str(it.get("name") or ""),
+            round(float(it["quantity"]), 4),
+            round(float(it["unit_price"]), 4),
+            round(float(it.get("discount_amount") or 0), 4),
+            round(float(it["total"]), 4),
+            round(self._qty_line_ceiling(int(it["product_id"]), float(it["quantity"])), 4),
+        )
+
+    def _render_cart_row(self, row: int, it: dict) -> tuple:
+        qty_col = _CART_COLS.index("qty")
+        self._set_readonly_text_cell(self._cart_widget.table, row, 0, str(it.get("code", "")))
+        self._set_readonly_text_cell(self._cart_widget.table, row, 1, str(it.get("name", "")))
+        self._set_readonly_text_cell(
+            self._cart_widget.table, row, 3, format_money(float(it["unit_price"]))
+        )
+        self._set_readonly_text_cell(
+            self._cart_widget.table, row, 4, format_money(float(it.get("discount_amount") or 0))
+        )
+        self._set_readonly_text_cell(self._cart_widget.table, row, 5, format_money(float(it["total"])))
+        self._cart_widget.table.setCellWidget(
+            row, qty_col, self._make_qty_cell_widget(int(it["product_id"]), float(it["quantity"]))
+        )
+        return self._cart_row_signature(it)
     
     def _refresh_cart_tree(self) -> None:
-        """Rebuild cart table with current items."""
-        qty_col = _CART_COLS.index("qty")
-        self._cart_widget.table.setRowCount(0)
-        
-        for i, it in enumerate(self.cart):
+        """Update cart table using row diffs; avoid full rebuild when possible."""
+        table = self._cart_widget.table
+        selected = table.currentRow()
+        prev_count = table.rowCount()
+        new_count = len(self.cart)
+
+        for it in self.cart:
             it["total"] = self._line_total(it)
-            self._cart_widget.table.insertRow(i)
-            
-            vals = (
-                it.get("code", ""),
-                it.get("name", ""),
-                None,  # Qty: widget
-                format_money(float(it["unit_price"])),
-                format_money(float(it.get("discount_amount") or 0)),
-                format_money(float(it["total"])),
-            )
-            
-            for c, val in enumerate(vals):
-                if c == qty_col:
-                    continue
-                cell = QTableWidgetItem(val)
-                cell.setFlags(cell.flags() & ~Qt.ItemIsEditable)
-                self._cart_widget.table.setItem(i, c, cell)
-            
-            # Qty widget
-            qty_widget = self._make_qty_cell_widget(int(it["product_id"]), float(it["quantity"]))
-            self._cart_widget.table.setCellWidget(i, qty_col, qty_widget)
-        
+
+        if prev_count < new_count:
+            for _ in range(new_count - prev_count):
+                table.insertRow(table.rowCount())
+        elif prev_count > new_count:
+            for _ in range(prev_count - new_count):
+                table.removeRow(table.rowCount() - 1)
+
+        next_signatures: list[tuple] = []
+        for i, it in enumerate(self.cart):
+            sig = self._cart_row_signature(it)
+            old_sig = self._cart_row_signatures[i] if i < len(self._cart_row_signatures) else None
+            if sig != old_sig:
+                sig = self._render_cart_row(i, it)
+            next_signatures.append(sig)
+
+        self._cart_row_signatures = next_signatures
+
+        if selected >= 0 and new_count:
+            table.setCurrentCell(min(selected, new_count - 1), 0)
+
         self._sync_cart_table_height()
         self._update_kpis_cart_lines()
         self._update_totals()
@@ -834,6 +883,7 @@ class SalesView(QWidget):
     
     def clear_cart(self) -> None:
         self.cart = []
+        self._cart_row_signatures = []
         self._checkout_widget.tender.clear()
         self._scan_widget.customer.clear()
         self._refresh_cart_tree()
@@ -841,7 +891,7 @@ class SalesView(QWidget):
     # ===== TOTALS & PAYMENT =====
     
     def _update_totals(self) -> None:
-        t = self._sales.calculate_cart_total(self.cart)
+        t = self._presenter.calculate_cart_total(self.cart)
         self._checkout_widget.subtotal_lbl.setText(f"Subtotal: {format_money(t['subtotal'])}")
         line_disc = sum(float(x.get("discount_amount") or 0) for x in self.cart)
         self._checkout_widget.disc_lbl.setText(f"Line discounts: {format_money(line_disc)}")
@@ -861,7 +911,7 @@ class SalesView(QWidget):
         self._update_tender_display()
     
     def _update_tender_display(self) -> None:
-        t = self._sales.calculate_cart_total(self.cart)
+        t = self._presenter.calculate_cart_total(self.cart)
         total = t["total"]
         if self._payment_var != "CASH":
             self._checkout_widget.change_lbl.setText("—")
@@ -882,7 +932,7 @@ class SalesView(QWidget):
             warning_message(self.window(), "SmartStock", "Cart is empty.")
             return
         self._refresh_cart_tree()
-        totals = self._sales.calculate_cart_total(self.cart)
+        totals = self._presenter.calculate_cart_total(self.cart)
         total = totals["total"]
         method = self._payment_var
         
@@ -941,14 +991,23 @@ class SalesView(QWidget):
         cash = self._sales.get_todays_cash_total()
         if "invoices" in self._kpi_labels:
             self._kpi_labels["invoices"].setText(str(t.get("invoice_count", 0)))
-        if "gross" in self._kpi_labels:
-            self._kpi_labels["gross"].setText(format_money(float(t.get("gross_total", 0))))
+        if "net" in self._kpi_labels:
+            self._kpi_labels["net"].setText(format_money(float(t.get("net_total", 0))))
+        if "refunds" in self._kpi_labels:
+            self._kpi_labels["refunds"].setText(format_money(float(t.get("refund_total", 0))))
         if "cash" in self._kpi_labels:
             self._kpi_labels["cash"].setText(format_money(cash))
         self._update_kpis_cart_lines()
         self._refresh_parked_from_db()
         self._sync_cart_table_height()
         self._scan_widget.search.setFocus()
+    
+    def _process_return(self) -> None:
+        d = ProcessReturnDialogQt(self.window(), self._sales, self._main)
+        if d.exec() != QDialog.DialogCode.Accepted or not d.memo:
+            return
+        CreditMemoPreviewDialogQt(self.window(), d.memo).exec()
+        self.refresh()
     
     # ===== PARKED SALES =====
     

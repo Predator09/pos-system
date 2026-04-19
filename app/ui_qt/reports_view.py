@@ -24,16 +24,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import PAD_MD
+from app.config import PAD_LG, PAD_MD, PAD_SM
 from app.ui.date_display import format_iso_date_as_display, parse_date_input
 from app.services.product_service import ProductService
+from app.services.purchase_service import PurchaseService
 from app.services.reports_service import ReportsService, format_report_period_title, format_sales_calendar_day
 from app.services.sales_service import SalesService
 from app.services.shop_settings import get_display_shop_name
 from app.ui.helpers import format_purchase_timestamp
 
-from app.ui_qt.dialogs_qt import ReceiptPreviewDialogQt
+from app.ui_qt.dialogs_qt import PurchaseReceiptDetailDialogQt, ReceiptPreviewDialogQt
 from app.ui_qt.helpers_qt import format_money, info_message, warning_message
+from app.ui_qt.icon_utils import set_button_icon
 
 _TOP_SELLERS_LIMIT = 15
 
@@ -58,6 +60,7 @@ class ReportsView(QWidget):
         self._svc = ReportsService()
         self._sales = SalesService()
         self._products = ProductService()
+        self._purchases = PurchaseService()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -74,36 +77,43 @@ class ReportsView(QWidget):
         sub.setWordWrap(True)
         root.addWidget(sub)
 
-        bar = QHBoxLayout()
-        bar.addWidget(QLabel("From"))
+        bar = QGridLayout()
+        bar.setContentsMargins(0, 0, 0, 0)
+        bar.setHorizontalSpacing(PAD_SM)
+        bar.setVerticalSpacing(PAD_SM)
+        bar.addWidget(QLabel("From"), 0, 0)
         self._start = QLineEdit(_today())
         self._start.setFixedWidth(110)
         self._start.setPlaceholderText("DD-MM-YYYY")
-        bar.addWidget(self._start)
-        bar.addWidget(QLabel("To"))
+        bar.addWidget(self._start, 0, 1)
+        bar.addWidget(QLabel("To"), 0, 2)
         self._end = QLineEdit(_today())
         self._end.setFixedWidth(110)
         self._end.setPlaceholderText("DD-MM-YYYY")
         self._end.setFixedWidth(120)
-        bar.addWidget(self._end)
+        bar.addWidget(self._end, 0, 3)
         td = QPushButton("Today")
         td.setCursor(Qt.PointingHandCursor)
         td.clicked.connect(self._today_range)
-        bar.addWidget(td)
+        set_button_icon(td, "fa5s.calendar-day")
+        bar.addWidget(td, 0, 4)
         ap = QPushButton("Apply")
         ap.setObjectName("primary")
         ap.setCursor(Qt.PointingHandCursor)
         ap.clicked.connect(self.refresh)
-        bar.addWidget(ap)
+        set_button_icon(ap, "fa5s.check")
+        bar.addWidget(ap, 0, 5)
         w = QPushButton("Last 7 days")
         w.setCursor(Qt.PointingHandCursor)
         w.clicked.connect(self._last_7)
-        bar.addWidget(w)
+        set_button_icon(w, "fa5s.calendar-week")
+        bar.addWidget(w, 0, 6)
         m = QPushButton("This month")
         m.setCursor(Qt.PointingHandCursor)
         m.clicked.connect(self._this_month)
-        bar.addWidget(m)
-        bar.addStretch(1)
+        set_button_icon(m, "fa5s.calendar-alt")
+        bar.addWidget(m, 0, 7)
+        bar.setColumnStretch(8, 1)
 
         self._err = QLabel("")
         self._err.setObjectName("errorText")
@@ -113,7 +123,7 @@ class ReportsView(QWidget):
         body_card = QFrame()
         body_card.setObjectName("card")
         body_l = QVBoxLayout(body_card)
-        body_l.setContentsMargins(16, 16, 16, 16)
+        body_l.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
         body_l.setSpacing(PAD_MD)
         body_l.addLayout(bar)
         body_l.addWidget(self._err)
@@ -130,6 +140,7 @@ class ReportsView(QWidget):
         daily_inner = QWidget()
         daily_l = QVBoxLayout(daily_inner)
         daily_l.setContentsMargins(0, 0, 0, 0)
+        daily_l.setSpacing(PAD_MD)
 
         self._period_title = QLabel("")
         self._period_title.setObjectName("pageSubtitle")
@@ -141,17 +152,20 @@ class ReportsView(QWidget):
         daily_l.addWidget(self._period_sub)
 
         kpi = QGridLayout()
-        kpi.setSpacing(12)
+        kpi.setHorizontalSpacing(PAD_MD)
+        kpi.setVerticalSpacing(PAD_MD)
         self._sum_labels: dict[str, QLabel] = {}
         specs = [
             ("invoice_count", "Invoices"),
-            ("gross_total", "Gross sales"),
-            ("avg_ticket", "Avg ticket"),
+            ("gross_total", "Net sales"),
+            ("refund_total", "Refunds"),
+            ("avg_ticket", "Avg ticket (net)"),
             ("discount_total", "Discounts"),
             ("subtotal_total", "Subtotal (before discounts)"),
         ]
         for i, (key, title) in enumerate(specs):
             col = QVBoxLayout()
+            col.setSpacing(PAD_SM)
             col.addWidget(QLabel(f"<span style='color:gray'>{title}</span>"))
             lb = QLabel("—")
             lb.setStyleSheet("font-size: 16px; font-weight: bold;")
@@ -166,9 +180,10 @@ class ReportsView(QWidget):
         self._day_block = QWidget()
         day_block_l = QVBoxLayout(self._day_block)
         day_block_l.setContentsMargins(0, 0, 0, 0)
+        day_block_l.setSpacing(PAD_SM)
         day_block_l.addWidget(QLabel("<b>Sales by calendar day</b>"))
         self._day_table = QTableWidget(0, 3)
-        self._day_table.setHorizontalHeaderLabels(["Day", "Invoices", "Gross"])
+        self._day_table.setHorizontalHeaderLabels(["Day", "Invoices", "Net"])
         self._stretch_col(self._day_table, 0)
         self._day_table.setMaximumHeight(280)
         day_block_l.addWidget(self._day_table)
@@ -177,7 +192,7 @@ class ReportsView(QWidget):
 
         daily_l.addWidget(QLabel("<b>Payment mix</b>"))
         self._pay_table = QTableWidget(0, 3)
-        self._pay_table.setHorizontalHeaderLabels(["Method", "Invoices", "Gross"])
+        self._pay_table.setHorizontalHeaderLabels(["Method", "Invoices", "Net"])
         self._stretch_col(self._pay_table, 0)
         self._pay_table.setMaximumHeight(220)
         daily_l.addWidget(self._pay_table)
@@ -203,6 +218,7 @@ class ReportsView(QWidget):
         more_inner = QWidget()
         more_l = QVBoxLayout(more_inner)
         more_l.setContentsMargins(0, 0, 0, 0)
+        more_l.setSpacing(PAD_MD)
 
         more_l.addWidget(
             QLabel("<span style='color:gray'>Inventory snapshot (always current — not limited by the date range).</span>")
@@ -230,7 +246,12 @@ class ReportsView(QWidget):
         self._low_table.setMaximumHeight(260)
         more_l.addWidget(self._low_table)
 
-        more_l.addWidget(QLabel("<b>Purchase receipts in range</b>"))
+        more_l.addWidget(
+            QLabel(
+                "<b>Purchase receipts in range</b> "
+                "<span style='color:gray'>— double-click a row for line details.</span>"
+            )
+        )
         self._pur_table = QTableWidget(0, 7)
         self._pur_table.setHorizontalHeaderLabels(
             ["Ref.", "Date & time", "Supplier", "Phone", "Email", "Lines", "Value"]
@@ -238,16 +259,19 @@ class ReportsView(QWidget):
         self._pur_table.setColumnWidth(1, 168)
         self._stretch_col(self._pur_table, 4)
         self._pur_table.setMaximumHeight(260)
+        self._pur_table.doubleClicked.connect(self._on_purchase_receipt_double_click)
         more_l.addWidget(self._pur_table)
 
         more_l.addWidget(QLabel("<b>Export CSV</b>"))
         b1 = QPushButton("Sales — one row per invoice")
         b1.setCursor(Qt.PointingHandCursor)
         b1.clicked.connect(self._export_sales)
+        set_button_icon(b1, "fa5s.file-invoice-dollar")
         more_l.addWidget(b1)
         b2 = QPushButton("Sale lines — one row per line item")
         b2.setCursor(Qt.PointingHandCursor)
         b2.clicked.connect(self._export_lines)
+        set_button_icon(b2, "fa5s.file-csv")
         more_l.addWidget(b2)
         more_l.addStretch(1)
 
@@ -270,6 +294,7 @@ class ReportsView(QWidget):
         self._rcpt_preview_btn.setCursor(Qt.PointingHandCursor)
         self._rcpt_preview_btn.setObjectName("ghost")
         self._rcpt_preview_btn.clicked.connect(self._preview_receipt_from_tree)
+        set_button_icon(self._rcpt_preview_btn, "fa5s.receipt")
         rcpt_btn_row.addWidget(self._rcpt_preview_btn)
         rcpt_btn_row.addStretch(1)
         rcpt_outer_l.addLayout(rcpt_btn_row)
@@ -374,6 +399,18 @@ class ReportsView(QWidget):
                 it.setFlags(it.flags() & ~Qt.ItemIsEditable)
                 table.setItem(r, c, it)
 
+    def _on_purchase_receipt_double_click(self) -> None:
+        r = self._pur_table.currentRow()
+        if r < 0:
+            return
+        it = self._pur_table.item(r, 0)
+        if it is None:
+            return
+        rid = it.data(Qt.ItemDataRole.UserRole)
+        if rid is None:
+            return
+        PurchaseReceiptDetailDialogQt(self.window(), self._purchases, int(rid)).exec()
+
     def refresh(self) -> None:
         self._err.setText("")
         start_raw, end_raw = self._range()
@@ -400,6 +437,7 @@ class ReportsView(QWidget):
 
         self._sum_labels["invoice_count"].setText(str(summary["invoice_count"]))
         self._sum_labels["gross_total"].setText(format_money(summary["gross_total"]))
+        self._sum_labels["refund_total"].setText(format_money(summary["refund_total"]))
         self._sum_labels["discount_total"].setText(format_money(summary["discount_total"]))
         self._sum_labels["subtotal_total"].setText(format_money(summary["subtotal_total"]))
         self._sum_labels["avg_ticket"].setText(format_money(summary["avg_ticket"]))
@@ -428,6 +466,7 @@ class ReportsView(QWidget):
                 top_rows.append(
                     (r.get("code"), r.get("name"), qv, format_money(float(r.get("revenue") or 0))),
                 )
+            pur_data = self._svc.purchase_receipts_in_range(start, end)
             pur_rows = [
                 (
                     r.get("reference"),
@@ -438,7 +477,7 @@ class ReportsView(QWidget):
                     int(r.get("line_count") or 0),
                     format_money(float(r.get("total_value") or 0)),
                 )
-                for r in self._svc.purchase_receipts_in_range(start, end)
+                for r in pur_data
             ]
             rcpt_groups = self._svc.sales_receipts_grouped_by_day(start, end)
         except ValueError as e:
@@ -449,6 +488,10 @@ class ReportsView(QWidget):
         self._fill_table(self._pay_table, pay_rows)
         self._fill_table(self._top_table, top_rows)
         self._fill_table(self._pur_table, pur_rows)
+        for i, pr in enumerate(pur_data):
+            cell = self._pur_table.item(i, 0)
+            if cell is not None:
+                cell.setData(Qt.ItemDataRole.UserRole, int(pr["id"]))
 
         self._rcpt_tree.clear()
         for grp in rcpt_groups:

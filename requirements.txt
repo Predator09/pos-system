@@ -3,3 +3,4 @@ Pillow==10.1.0
 python-dateutil==2.8.2
 reportlab==4.0.7
 openpyxl==3.1.5
+qtawesome==1.4.2

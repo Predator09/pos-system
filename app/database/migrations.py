@@ -66,6 +66,36 @@ class DatabaseMigrations:
             result = self.db.fetchone("SELECT MAX(version) FROM db_version")
             current_version = result[0] if result and result[0] is not None else current_version
 
+        if current_version < 10:
+            self._migrate_v10()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
+        if current_version < 11:
+            self._migrate_v11()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
+        if current_version < 12:
+            self._migrate_v12()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
+        if current_version < 13:
+            self._migrate_v13()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
+        if current_version < 14:
+            self._migrate_v14()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
+        if current_version < 15:
+            self._migrate_v15()
+            result = self.db.fetchone("SELECT MAX(version) FROM db_version")
+            current_version = result[0] if result and result[0] is not None else current_version
+
         self.db.close()
 
     def _migrate_v1(self, from_version):
@@ -80,11 +110,11 @@ class DatabaseMigrations:
                 code TEXT UNIQUE NOT NULL,
                 category TEXT,
                 description TEXT,
-                quantity_in_stock REAL DEFAULT 0,
-                minimum_stock_level REAL DEFAULT 10,
-                maximum_stock_level REAL DEFAULT 1000,
-                cost_price REAL NOT NULL,
-                selling_price REAL NOT NULL,
+                quantity_in_stock REAL DEFAULT 0 CHECK (quantity_in_stock >= 0),
+                minimum_stock_level REAL DEFAULT 10 CHECK (minimum_stock_level >= 0),
+                maximum_stock_level REAL DEFAULT 1000 CHECK (maximum_stock_level >= 0),
+                cost_price REAL NOT NULL CHECK (cost_price >= 0),
+                selling_price REAL NOT NULL CHECK (selling_price >= 0),
                 discount_percentage REAL DEFAULT 0,
                 is_active BOOLEAN DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -120,10 +150,10 @@ class DatabaseMigrations:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 sale_id INTEGER NOT NULL,
                 product_id INTEGER NOT NULL,
-                quantity REAL NOT NULL,
-                unit_price REAL NOT NULL,
+                quantity REAL NOT NULL CHECK (quantity > 0),
+                unit_price REAL NOT NULL CHECK (unit_price >= 0),
                 discount_percentage REAL DEFAULT 0,
-                total REAL NOT NULL,
+                total REAL NOT NULL CHECK (total >= 0),
                 FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
                 FOREIGN KEY (product_id) REFERENCES products(id)
             )
@@ -136,8 +166,8 @@ class DatabaseMigrations:
             CREATE TABLE IF NOT EXISTS purchases (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 product_id INTEGER NOT NULL,
-                quantity REAL NOT NULL,
-                cost_price REAL NOT NULL,
+                quantity REAL NOT NULL CHECK (quantity > 0),
+                cost_price REAL NOT NULL CHECK (cost_price >= 0),
                 supplier_name TEXT,
                 notes TEXT,
                 purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -283,3 +313,340 @@ class DatabaseMigrations:
         if "cashier_name" not in cols:
             self.db.execute("ALTER TABLE sales ADD COLUMN cashier_name TEXT")
         self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (9,))
+
+    def _migrate_v10(self):
+        """Returns / refunds linked to original sales; stock restored; revenue net of refunds."""
+        self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sale_returns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL,
+                credit_memo_number TEXT UNIQUE NOT NULL,
+                return_date TIMESTAMP NOT NULL,
+                total_refund_amount REAL NOT NULL CHECK (total_refund_amount >= 0),
+                payment_method TEXT,
+                notes TEXT,
+                cashier_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sale_id) REFERENCES sales(id)
+            )
+            """
+        )
+        self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sale_return_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_return_id INTEGER NOT NULL,
+                sale_item_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity_returned REAL NOT NULL CHECK (quantity_returned > 0),
+                line_refund_amount REAL NOT NULL CHECK (line_refund_amount >= 0),
+                FOREIGN KEY (sale_return_id) REFERENCES sale_returns(id) ON DELETE CASCADE,
+                FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+            """
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sale_returns_sale_id ON sale_returns(sale_id)"
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sale_returns_return_date ON sale_returns(return_date)"
+        )
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (10,))
+
+    def _migrate_v11(self):
+        """Enforce DB-level business rules with CHECK constraints."""
+        self._assert_no_invalid_rows(
+            "products",
+            "quantity_in_stock < 0 OR minimum_stock_level < 0 OR maximum_stock_level < 0 OR cost_price < 0 OR selling_price < 0",
+        )
+        self._assert_no_invalid_rows(
+            "sale_items",
+            "quantity <= 0 OR unit_price < 0 OR total < 0",
+        )
+        self._assert_no_invalid_rows(
+            "purchases",
+            "quantity <= 0 OR cost_price < 0",
+        )
+        self._assert_no_invalid_rows(
+            "sale_returns",
+            "total_refund_amount < 0",
+        )
+        self._assert_no_invalid_rows(
+            "sale_return_items",
+            "quantity_returned <= 0 OR line_refund_amount < 0",
+        )
+
+        self.db.execute("PRAGMA foreign_keys = OFF")
+
+        # Rebuild products to add CHECK constraints.
+        self.db.execute(
+            """
+            CREATE TABLE products_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                code TEXT UNIQUE NOT NULL,
+                category TEXT,
+                description TEXT,
+                quantity_in_stock REAL DEFAULT 0 CHECK (quantity_in_stock >= 0),
+                minimum_stock_level REAL DEFAULT 10 CHECK (minimum_stock_level >= 0),
+                maximum_stock_level REAL DEFAULT 1000 CHECK (maximum_stock_level >= 0),
+                cost_price REAL NOT NULL CHECK (cost_price >= 0),
+                selling_price REAL NOT NULL CHECK (selling_price >= 0),
+                discount_percentage REAL DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expiry_date TEXT,
+                image_path TEXT,
+                barcode TEXT
+            )
+            """
+        )
+        self.db.execute(
+            """
+            INSERT INTO products_new (
+                id, name, code, category, description, quantity_in_stock, minimum_stock_level,
+                maximum_stock_level, cost_price, selling_price, discount_percentage, is_active,
+                created_at, updated_at, expiry_date, image_path, barcode
+            )
+            SELECT
+                id, name, code, category, description, quantity_in_stock, minimum_stock_level,
+                maximum_stock_level, cost_price, selling_price, discount_percentage, is_active,
+                created_at, updated_at, expiry_date, image_path, barcode
+            FROM products
+            """
+        )
+        self.db.execute("DROP TABLE products")
+        self.db.execute("ALTER TABLE products_new RENAME TO products")
+        self.db.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode_unique
+            ON products(barcode)
+            WHERE barcode IS NOT NULL AND TRIM(barcode) != ''
+            """
+        )
+
+        # Rebuild sale_items to add CHECK constraints.
+        self.db.execute(
+            """
+            CREATE TABLE sale_items_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity REAL NOT NULL CHECK (quantity > 0),
+                unit_price REAL NOT NULL CHECK (unit_price >= 0),
+                discount_percentage REAL DEFAULT 0,
+                total REAL NOT NULL CHECK (total >= 0),
+                FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+            """
+        )
+        self.db.execute(
+            """
+            INSERT INTO sale_items_new (
+                id, sale_id, product_id, quantity, unit_price, discount_percentage, total
+            )
+            SELECT
+                id, sale_id, product_id, quantity, unit_price, discount_percentage, total
+            FROM sale_items
+            """
+        )
+        self.db.execute("DROP TABLE sale_items")
+        self.db.execute("ALTER TABLE sale_items_new RENAME TO sale_items")
+
+        # Rebuild purchases to add CHECK constraints.
+        self.db.execute(
+            """
+            CREATE TABLE purchases_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                product_id INTEGER NOT NULL,
+                quantity REAL NOT NULL CHECK (quantity > 0),
+                cost_price REAL NOT NULL CHECK (cost_price >= 0),
+                supplier_name TEXT,
+                notes TEXT,
+                purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                receipt_id INTEGER REFERENCES purchase_receipts(id),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+            """
+        )
+        self.db.execute(
+            """
+            INSERT INTO purchases_new (
+                id, product_id, quantity, cost_price, supplier_name, notes,
+                purchase_date, created_at, receipt_id
+            )
+            SELECT
+                id, product_id, quantity, cost_price, supplier_name, notes,
+                purchase_date, created_at, receipt_id
+            FROM purchases
+            """
+        )
+        self.db.execute("DROP TABLE purchases")
+        self.db.execute("ALTER TABLE purchases_new RENAME TO purchases")
+
+        # Rebuild sale_returns to add CHECK constraints.
+        self.db.execute(
+            """
+            CREATE TABLE sale_returns_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_id INTEGER NOT NULL,
+                credit_memo_number TEXT UNIQUE NOT NULL,
+                return_date TIMESTAMP NOT NULL,
+                total_refund_amount REAL NOT NULL CHECK (total_refund_amount >= 0),
+                payment_method TEXT,
+                notes TEXT,
+                cashier_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (sale_id) REFERENCES sales(id)
+            )
+            """
+        )
+        self.db.execute(
+            """
+            INSERT INTO sale_returns_new (
+                id, sale_id, credit_memo_number, return_date, total_refund_amount,
+                payment_method, notes, cashier_name, created_at
+            )
+            SELECT
+                id, sale_id, credit_memo_number, return_date, total_refund_amount,
+                payment_method, notes, cashier_name, created_at
+            FROM sale_returns
+            """
+        )
+        self.db.execute("DROP TABLE sale_returns")
+        self.db.execute("ALTER TABLE sale_returns_new RENAME TO sale_returns")
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sale_returns_sale_id ON sale_returns(sale_id)"
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sale_returns_return_date ON sale_returns(return_date)"
+        )
+
+        # Rebuild sale_return_items to add CHECK constraints.
+        self.db.execute(
+            """
+            CREATE TABLE sale_return_items_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sale_return_id INTEGER NOT NULL,
+                sale_item_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity_returned REAL NOT NULL CHECK (quantity_returned > 0),
+                line_refund_amount REAL NOT NULL CHECK (line_refund_amount >= 0),
+                FOREIGN KEY (sale_return_id) REFERENCES sale_returns(id) ON DELETE CASCADE,
+                FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            )
+            """
+        )
+        self.db.execute(
+            """
+            INSERT INTO sale_return_items_new (
+                id, sale_return_id, sale_item_id, product_id, quantity_returned, line_refund_amount
+            )
+            SELECT
+                id, sale_return_id, sale_item_id, product_id, quantity_returned, line_refund_amount
+            FROM sale_return_items
+            """
+        )
+        self.db.execute("DROP TABLE sale_return_items")
+        self.db.execute("ALTER TABLE sale_return_items_new RENAME TO sale_return_items")
+
+        self.db.execute("PRAGMA foreign_keys = ON")
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (11,))
+
+    def _assert_no_invalid_rows(self, table_name, invalid_where_clause):
+        invalid_row = self.db.fetchone(
+            f"SELECT id FROM {table_name} WHERE {invalid_where_clause} LIMIT 1"
+        )
+        if invalid_row:
+            raise ValueError(
+                f"Cannot apply migration v11: invalid row exists in {table_name} "
+                f"(id={invalid_row[0]})."
+            )
+
+    def _migrate_v12(self):
+        """Store monetary amounts in integer cents to avoid float drift."""
+        table_cols = {
+            "sales": (
+                ("subtotal_cents", "subtotal"),
+                ("discount_amount_cents", "discount_amount"),
+                ("tax_amount_cents", "tax_amount"),
+                ("total_amount_cents", "total_amount"),
+            ),
+            "sale_items": (
+                ("unit_price_cents", "unit_price"),
+                ("total_cents", "total"),
+            ),
+            "sale_returns": (("total_refund_amount_cents", "total_refund_amount"),),
+            "sale_return_items": (("line_refund_amount_cents", "line_refund_amount"),),
+        }
+
+        for table, mappings in table_cols.items():
+            cols = {row[1] for row in self.db.fetchall(f"PRAGMA table_info({table})")}
+            for cents_col, legacy_col in mappings:
+                if cents_col not in cols:
+                    self.db.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {cents_col} INTEGER NOT NULL DEFAULT 0"
+                    )
+                self.db.execute(
+                    f"""
+                    UPDATE {table}
+                    SET {cents_col} = CAST(ROUND(COALESCE({legacy_col}, 0) * 100.0, 0) AS INTEGER)
+                    WHERE {cents_col} IS NULL OR {cents_col} = 0
+                    """
+                )
+
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (12,))
+
+    def _migrate_v13(self):
+        """Add first-login password rotation flag to users."""
+        cols = {row[1] for row in self.db.fetchall("PRAGMA table_info(users)")}
+        if "must_change_password" not in cols:
+            self.db.execute(
+                "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+            )
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (13,))
+
+    def _migrate_v14(self):
+        """Centralized audit trail table for business and admin events."""
+        self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                actor_user_id INTEGER,
+                details_json TEXT NOT NULL DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events(created_at)"
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_events_event_type ON audit_events(event_type)"
+        )
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (14,))
+
+    def _migrate_v15(self):
+        """Indexes for reports date-range filters and sort patterns."""
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sales_sale_date_id ON sales(sale_date, id)"
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sale_returns_return_date_id ON sale_returns(return_date, id)"
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_purchase_receipts_received_at ON purchase_receipts(received_at)"
+        )
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_purchase_receipts_created_at ON purchase_receipts(created_at)"
+        )
+        self.db.execute("INSERT OR IGNORE INTO db_version (version) VALUES (?)", (15,))

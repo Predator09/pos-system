@@ -71,6 +71,32 @@ class AppSettings:
             data["appearance"] = "light"
         self._save(data)
 
+    def receipt_print_command_override(self) -> Optional[str]:
+        """``None`` if the user has not saved an override in ``app_settings.json``."""
+        data = self._load()
+        if "receipt_print_command" not in data:
+            return None
+        v = data.get("receipt_print_command")
+        if v is None:
+            return ""
+        return str(v)
+
+    def get_receipt_print_command(self) -> str:
+        """Effective command: saved override, else ``config.RECEIPT_PRINT_COMMAND``."""
+        o = self.receipt_print_command_override()
+        if o is not None:
+            return o.strip()
+        return (app_config.RECEIPT_PRINT_COMMAND or "").strip()
+
+    def set_receipt_print_command_override(self, value: Optional[str]) -> None:
+        """Persist override, or pass ``None`` to remove it (fall back to ``config.py``)."""
+        data = self._load()
+        if value is None:
+            data.pop("receipt_print_command", None)
+        else:
+            data["receipt_print_command"] = value
+        self._save(data)
+
 
 def resolve_startup_theme() -> str:
     """Bootstrap theme name string from saved appearance (legacy helper; Qt uses ``get_appearance`` + QSS)."""

@@ -41,7 +41,7 @@ or equivalently:
 python run_qt.py
 ```
 
-On first launch you are prompted once for the **installation code** (same value as the Inno Setup wizard; set `INSTALL_CODE_REQUIRED` in `app/config.py` and match `INSTALL_CODE` in `installer/SmartStock.iss`). Then the app creates the database and applies migrations. Sign in with your user (see below).
+You are prompted for the **installation code** on first launch and again **every 60 days** (same value as the Inno Setup wizard; set `INSTALL_CODE_REQUIRED` in `app/config.py` and match `INSTALL_CODE` in `installer/SmartStock.iss`). Optional env: `SMARTSTOCK_INSTALL_REVERIFY_DAYS`. Then the app creates the database and applies migrations. Sign in with your user (see below).
 
 **Data location**
 
@@ -82,7 +82,7 @@ powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1
 powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1 -InstallCode "YourSecret"
 ```
 
-The wizard asks for the **installation code** before copying files. A successful install writes `%LOCALAPPDATA%\SmartStock\.install_verified` so the app does **not** ask for the code again on that PC. If you run the portable `dist\V01` folder without the installer, the app prompts once on first launch. Optional tasks: desktop icon, **start when Windows logs on** (current user). Default install directory: `%LocalAppData%\Programs\SmartStock\` (no admin prompt; correct user for startup).
+The wizard asks for the **installation code** before copying files. A successful install writes `%LOCALAPPDATA%\SmartStock\.install_verified` (with a timestamp) so the app counts that as verified; you are prompted again after **60 days** without a successful code entry. If you run the portable `dist\V01` folder without the installer, the app prompts on first launch, then on the same interval. Optional tasks: desktop icon, **start when Windows logs on** (current user). Default install directory: `%LocalAppData%\Programs\SmartStock\` (no admin prompt; correct user for startup).
 
 ## Default login
 

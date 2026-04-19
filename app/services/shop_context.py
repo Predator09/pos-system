@@ -157,6 +157,12 @@ def backups_dir() -> Path:
     return p
 
 
+def db_backups_dir() -> Path:
+    p = shop_root() / "backups" / "db"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def product_images_dir() -> Path:
     p = shop_root() / "product_images"
     p.mkdir(parents=True, exist_ok=True)

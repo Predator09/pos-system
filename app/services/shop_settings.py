@@ -1,4 +1,4 @@
-"""Persist shop branding (business name, logo path) locally."""
+"""Persist shop branding (business name, logo, contact) locally."""
 
 from __future__ import annotations
 
@@ -95,3 +95,42 @@ class ShopSettings:
         data["shop_name"] = n
         self._save(data)
         return n
+
+    def get_business_phone(self) -> str:
+        raw = self._load().get("business_phone")
+        return raw.strip() if isinstance(raw, str) else ""
+
+    def set_business_phone(self, value: str) -> None:
+        v = (value or "").strip()[:80]
+        data = self._load()
+        if v:
+            data["business_phone"] = v
+        else:
+            data.pop("business_phone", None)
+        self._save(data)
+
+    def get_business_email(self) -> str:
+        raw = self._load().get("business_email")
+        return raw.strip() if isinstance(raw, str) else ""
+
+    def set_business_email(self, value: str) -> None:
+        v = (value or "").strip()[:120]
+        data = self._load()
+        if v:
+            data["business_email"] = v
+        else:
+            data.pop("business_email", None)
+        self._save(data)
+
+    def get_business_address(self) -> str:
+        raw = self._load().get("business_address")
+        return raw.strip() if isinstance(raw, str) else ""
+
+    def set_business_address(self, value: str) -> None:
+        v = (value or "").strip()[:500]
+        data = self._load()
+        if v:
+            data["business_address"] = v
+        else:
+            data.pop("business_address", None)
+        self._save(data)

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.database.connection import db
 from app.database.sync import SyncOperation, SyncTracker
+from app.services.audit_service import AuditService
 
 
 def _product_image_dir() -> Path:
@@ -34,6 +35,7 @@ _UPDATABLE_FIELDS = frozenset(
 class ProductService:
     def __init__(self):
         self.sync = SyncTracker(db)
+        self.audit = AuditService()
 
     def list_products(self):
         """Active products only (POS / picker)."""
@@ -223,6 +225,12 @@ class ProductService:
         )
         product_id = cursor.lastrowid
         self.sync.log_change("products", product_id, SyncOperation.CREATE)
+        self.audit.record(
+            event_type="product_created",
+            entity_type="product",
+            entity_id=product_id,
+            details={"code": code, "name": name},
+        )
         return self.get_product(product_id)
 
     def update_product(self, product_id: int, **kwargs):
@@ -242,6 +250,12 @@ class ProductService:
         query = f"UPDATE products SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         db.execute(query, tuple(params))
         self.sync.log_change("products", product_id, SyncOperation.UPDATE)
+        self.audit.record(
+            event_type="product_updated",
+            entity_type="product",
+            entity_id=product_id,
+            details={"updated_fields": sorted([k for k in kwargs if k in _UPDATABLE_FIELDS])},
+        )
         return self.get_product(product_id)
 
     def set_product_image_from_file(self, product_id: int, source_path: str) -> str:
@@ -281,6 +295,12 @@ class ProductService:
             (new_qty, product_id),
         )
         self.sync.log_change("products", product_id, SyncOperation.UPDATE)
+        self.audit.record(
+            event_type="stock_changed",
+            entity_type="product",
+            entity_id=product_id,
+            details={"reason": "manual_delta", "delta": float(delta), "new_quantity": new_qty},
+        )
         return self.get_product(product_id)
 
     def get_low_stock(self):
@@ -335,6 +355,12 @@ class ProductService:
             (quantity, product_id),
         )
         self.sync.log_change("products", product_id, SyncOperation.UPDATE)
+        self.audit.record(
+            event_type="stock_changed",
+            entity_type="product",
+            entity_id=product_id,
+            details={"reason": "manual_set", "new_quantity": float(quantity)},
+        )
 
     def bulk_deactivate(self, product_ids: list[int]):
         if not product_ids:

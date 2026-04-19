@@ -5,7 +5,7 @@
 ; 3. Open this file in Inno Setup and Build, or run ISCC.exe on this file.
 
 #ifndef INSTALL_CODE
-#define INSTALL_CODE "INTHENAMEOFALLAH"
+#define INSTALL_CODE "AlhamdulilA"
 #endif
 
 #define MyAppName "SmartStock"

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH, format_app_footer_text
+from app.config import PAD_LG, PAD_MD, PAD_SM, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH, format_app_footer_text
 from app.services.shop_settings import get_display_shop_name
 from app.services.app_settings import AppSettings, theme_for_appearance
 from app.services.backup_service import BackupService
@@ -30,10 +30,12 @@ from app.ui_qt.gallery_view import GalleryView
 from app.ui_qt.home_view import HomeView
 from app.ui_qt.login_view import LoginView
 from app.ui_qt.logo_widget import ShopLogoLabel
+from app.ui_qt.icon_utils import set_button_icon
 from app.ui_qt.products_view import ProductsView
 from app.ui_qt.purchases_view import PurchasesView
 from app.ui_qt.reports_view import ReportsView
 from app.ui_qt.sales_view import SalesView
+from app.ui_qt.settings_view import SettingsView
 from app.ui_qt.motion_qt import fade_in_widget
 from app.ui_qt.profile_dialog_qt import ProfileDialogQt
 from app.ui_qt.styles import get_qt_stylesheet
@@ -48,6 +50,7 @@ _NAV: tuple[tuple[str, str, bool], ...] = (
     ("Point of Sale", "sales", True),
     ("Purchases", "purchases", True),
     ("Reports", "reports", True),
+    ("Settings", "settings", False),
 )
 
 _TOP_BAR_META: dict[str, tuple[str, str]] = {
@@ -57,7 +60,11 @@ _TOP_BAR_META: dict[str, tuple[str, str]] = {
     "sales": ("Point of Sale", "__shop_register__"),
     "purchases": ("Purchases", "Purchase stock · inventory & costing"),
     "reports": ("Reports", "Sales, inventory & CSV exports"),
+    "settings": ("Settings", "Appearance, shop, receipts, backup, and team"),
 }
+
+# Top-bar global search hidden on these screens (more vertical room / less clutter).
+_TOP_BAR_HIDE_GLOBAL_SEARCH = frozenset({"home", "sales", "purchases", "reports", "settings"})
 
 
 def _nav_icon(style: QStyle, key: str) -> QIcon:
@@ -68,6 +75,7 @@ def _nav_icon(style: QStyle, key: str) -> QIcon:
         "sales": QStyle.StandardPixmap.SP_ComputerIcon,
         "purchases": QStyle.StandardPixmap.SP_DialogOpenButton,
         "reports": QStyle.StandardPixmap.SP_FileDialogInfoView,
+        "settings": QStyle.StandardPixmap.SP_DialogApplyButton,
     }
     return style.standardIcon(m.get(key, QStyle.StandardPixmap.SP_FileIcon))
 
@@ -93,6 +101,10 @@ class MainQtWindow(QMainWindow):
         self._avatar: QLabel | None = None
         self._brand_name_label: QLabel | None = None
         self._footer_text_label: QLabel | None = None
+        self._side_frame: QFrame | None = None
+        self._bell_btn: QPushButton | None = None
+        self._profile_btn: QPushButton | None = None
+        self._signout_btn: QPushButton | None = None
 
         self._root_stack = QStackedWidget()
         self.setCentralWidget(self._root_stack)
@@ -162,25 +174,26 @@ class MainQtWindow(QMainWindow):
             self._page_subtitle.setText(sub)
         gs = getattr(self, "_global_search", None)
         if gs is not None:
-            gs.setVisible(screen_key != "sales")
+            gs.setVisible(screen_key not in _TOP_BAR_HIDE_GLOBAL_SEARCH)
 
     def _build_shell(self) -> None:
         shell = QWidget()
         shell.setObjectName("shellRoot")
         outer = QHBoxLayout(shell)
-        outer.setContentsMargins(16, 16, 16, 16)
-        outer.setSpacing(16)
+        outer.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
+        outer.setSpacing(PAD_MD)
 
         # ---- Sidebar (full height) ----
         side = QFrame()
         side.setObjectName("sidebarRail")
         side.setFixedWidth(268)
+        self._side_frame = side
         side_l = QVBoxLayout(side)
-        side_l.setContentsMargins(14, 18, 14, 18)
-        side_l.setSpacing(12)
+        side_l.setContentsMargins(PAD_MD, PAD_LG, PAD_MD, PAD_LG)
+        side_l.setSpacing(PAD_MD)
 
         brand_row = QHBoxLayout()
-        brand_row.setSpacing(12)
+        brand_row.setSpacing(PAD_MD)
         self._sidebar_logo = ShopLogoLabel(side, size=48, editable=True)
         brand_row.addWidget(self._sidebar_logo, alignment=Qt.AlignTop)
         brand_txt = QVBoxLayout()
@@ -194,12 +207,12 @@ class MainQtWindow(QMainWindow):
         brand_row.addLayout(brand_txt, 1)
         side_l.addLayout(brand_row)
 
-        side_l.addSpacing(8)
+        side_l.addSpacing(PAD_SM)
 
         self._nav_list = QListWidget()
         self._nav_list.setObjectName("sidebarNav")
         self._nav_list.setIconSize(QSize(22, 22))
-        self._nav_list.setSpacing(4)
+        self._nav_list.setSpacing(PAD_SM // 2)
         self._nav_list.setFocusPolicy(Qt.StrongFocus)
         sty = QApplication.instance().style() if QApplication.instance() else None
         for i, (label, key, chev) in enumerate(_NAV):
@@ -223,11 +236,11 @@ class MainQtWindow(QMainWindow):
         top = QFrame()
         top.setObjectName("topBar")
         top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(22, 16, 22, 16)
-        top_layout.setSpacing(16)
+        top_layout.setContentsMargins(PAD_LG, PAD_MD, PAD_LG, PAD_MD)
+        top_layout.setSpacing(PAD_MD)
 
         titles = QVBoxLayout()
-        titles.setSpacing(4)
+        titles.setSpacing(PAD_SM // 2)
         self._page_title = QLabel("Dashboard Overview")
         self._page_title.setObjectName("pageTitle")
         titles.addWidget(self._page_title)
@@ -244,15 +257,18 @@ class MainQtWindow(QMainWindow):
         self._global_search.setClearButtonEnabled(True)
         self._global_search.setMinimumWidth(280)
         self._global_search.setMaximumWidth(400)
+        self._global_search.setMinimumHeight(40)
         top_layout.addWidget(self._global_search)
         self._global_search.returnPressed.connect(self._on_global_search_submit)
 
-        bell = QPushButton("🔔")
+        bell = QPushButton("")
         bell.setObjectName("iconButton")
         bell.setCursor(Qt.PointingHandCursor)
         bell.setFixedSize(42, 42)
         bell.setToolTip("Low-stock summary (at or below each product’s minimum)")
         bell.clicked.connect(self._on_bell_alerts)
+        set_button_icon(bell, "fa5s.bell", color="#fbbf24", size=16)
+        self._bell_btn = bell
         top_layout.addWidget(bell)
 
         self._avatar = QLabel("?")
@@ -268,13 +284,17 @@ class MainQtWindow(QMainWindow):
         prof = QPushButton("My profile")
         prof.setObjectName("ghost")
         prof.setCursor(Qt.PointingHandCursor)
+        set_button_icon(prof, "fa5s.user-circle")
         prof.clicked.connect(self._open_my_profile)
+        self._profile_btn = prof
         top_layout.addWidget(prof)
 
         so = QPushButton("Sign out")
         so.setObjectName("ghost")
         so.setCursor(Qt.PointingHandCursor)
+        set_button_icon(so, "fa5s.sign-out-alt")
         so.clicked.connect(self.show_login)
+        self._signout_btn = so
         top_layout.addWidget(so)
 
         rv.addWidget(top)
@@ -286,6 +306,7 @@ class MainQtWindow(QMainWindow):
         self._screens["sales"] = SalesView(self)
         self._screens["purchases"] = PurchasesView(self)
         self._screens["reports"] = ReportsView(self)
+        self._screens["settings"] = SettingsView(self)
         for _a, key, _b in _NAV:
             self._content_stack.addWidget(self._screens[key])
 
@@ -300,7 +321,7 @@ class MainQtWindow(QMainWindow):
         footer = QFrame()
         footer.setObjectName("appFooter")
         fl = QHBoxLayout(footer)
-        fl.setContentsMargins(22, 10, 22, 12)
+        fl.setContentsMargins(PAD_LG, PAD_SM, PAD_LG, PAD_MD)
         self._footer_text_label = QLabel(format_app_footer_text())
         self._footer_text_label.setObjectName("appFooterText")
         self._footer_text_label.setWordWrap(True)
@@ -311,6 +332,48 @@ class MainQtWindow(QMainWindow):
 
         self._shell = shell
         self._update_top_bar("home")
+        self._apply_responsive_layout()
+
+    def _apply_responsive_layout(self) -> None:
+        """Responsive shell sizing for narrow windows."""
+        if self._shell is None:
+            return
+        w = self.width()
+
+        if self._side_frame is not None:
+            if w < 1024:
+                self._side_frame.setFixedWidth(220)
+            elif w < 1280:
+                self._side_frame.setFixedWidth(240)
+            else:
+                self._side_frame.setFixedWidth(268)
+
+        if self._global_search is not None:
+            if w < 1024:
+                self._global_search.setMinimumWidth(180)
+                self._global_search.setMaximumWidth(240)
+            elif w < 1280:
+                self._global_search.setMinimumWidth(220)
+                self._global_search.setMaximumWidth(320)
+            else:
+                self._global_search.setMinimumWidth(280)
+                self._global_search.setMaximumWidth(400)
+
+        compact = w < 1024
+        if self._user_label is not None:
+            self._user_label.setVisible(not compact)
+        if self._profile_btn is not None:
+            self._profile_btn.setText("" if compact else "My profile")
+            self._profile_btn.setToolTip("My profile")
+            self._profile_btn.setMinimumWidth(42 if compact else 0)
+        if self._signout_btn is not None:
+            self._signout_btn.setText("" if compact else "Sign out")
+            self._signout_btn.setToolTip("Sign out")
+            self._signout_btn.setMinimumWidth(42 if compact else 0)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._apply_responsive_layout()
 
     def _on_nav_row(self, row: int) -> None:
         if row < 0:
@@ -431,6 +494,11 @@ class MainQtWindow(QMainWindow):
         pv = self._screens.get("products")
         if pv is not None:
             fn = getattr(pv, "apply_theme_tokens", None)
+            if callable(fn):
+                fn()
+        sv = self._screens.get("settings")
+        if sv is not None:
+            fn = getattr(sv, "sync_appearance_switch", None)
             if callable(fn):
                 fn()
         return True

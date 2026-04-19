@@ -5,30 +5,30 @@ from __future__ import annotations
 from typing import Final
 
 # Layered surfaces (Qt shell — base canvas, cards, elevated/table chrome)
-SURFACE_BASE_LIGHT: Final[str] = "#f1f5f9"
+SURFACE_BASE_LIGHT: Final[str] = "#f8fafc"
 SURFACE_CARD_LIGHT: Final[str] = "#ffffff"
 SURFACE_ELEVATED_LIGHT: Final[str] = "#e2e8f0"
 
-SURFACE_BASE_DARK: Final[str] = "#020617"
-SURFACE_CARD_DARK: Final[str] = "#0f172a"
-SURFACE_ELEVATED_DARK: Final[str] = "#1e293b"
+SURFACE_BASE_DARK: Final[str] = "#0F172A"
+SURFACE_CARD_DARK: Final[str] = "#1E293B"
+SURFACE_ELEVATED_DARK: Final[str] = "#334155"
 
 
 class UIThemeTokens:
-    """Brand and semantic colors (hex, sRGB) — modern cyan-forward accent, shared by Tk + Qt."""
+    """Brand and semantic colors (hex, sRGB) shared by Tk + Qt."""
 
-    PRIMARY: Final[str] = "#06b6d4"
-    PRIMARY_HOVER: Final[str] = "#22d3ee"
-    PRIMARY_MUTED: Final[str] = "#0891b2"
-    SUCCESS: Final[str] = "#16a34a"
+    PRIMARY: Final[str] = "#2563EB"
+    PRIMARY_HOVER: Final[str] = "#1E4ED8"
+    PRIMARY_MUTED: Final[str] = "#1D4ED8"
+    SUCCESS: Final[str] = "#22C55E"
     SUCCESS_HOVER: Final[str] = "#22c55e"
-    WARNING: Final[str] = "#d97706"
-    DANGER: Final[str] = "#dc2626"
+    WARNING: Final[str] = "#F59E0B"
+    DANGER: Final[str] = "#EF4444"
     # App canvas — aligned with layered surfaces
     BG_LIGHT: Final[str] = SURFACE_BASE_LIGHT
     BG_DARK: Final[str] = SURFACE_BASE_DARK
     TEXT_LIGHT: Final[str] = "#212529"
-    TEXT_DARK: Final[str] = "#E9ECEF"
+    TEXT_DARK: Final[str] = "#F8FAFC"
 
 
 TOKENS = UIThemeTokens
@@ -74,20 +74,20 @@ def product_active_row_surface(appearance: str) -> tuple[str, str]:
 
 # --- CustomTkinter shell (light / dark appearance tuples) ---
 CTK_CARD_BORDER: Final[tuple[str, str]] = ("#e2e8f0", "#334155")
-CTK_CARD_BORDER_STRONG: Final[tuple[str, str]] = ("#cbd5e1", "#475569")
-CTK_BTN_PRIMARY_FG: Final[tuple[str, str]] = ("#0891b2", "#22d3ee")
-CTK_BTN_PRIMARY_HOVER: Final[tuple[str, str]] = ("#06b6d4", "#67e8f9")
+CTK_CARD_BORDER_STRONG: Final[tuple[str, str]] = ("#cbd5e1", "#334155")
+CTK_BTN_PRIMARY_FG: Final[tuple[str, str]] = ("#2563EB", "#2563EB")
+CTK_BTN_PRIMARY_HOVER: Final[tuple[str, str]] = ("#1E4ED8", "#1E4ED8")
 CTK_BTN_GHOST_BORDER: Final[tuple[str, str]] = ("#94a3b8", "#475569")
 CTK_BTN_GHOST_HOVER: Final[tuple[str, str]] = ("#f1f5f9", "#1e293b")
 
 # Main window top nav pills
-CTK_NAV_SELECTED_FG: Final[tuple[str, str]] = ("#0e7490", "#22d3ee")
-CTK_NAV_SELECTED_HOVER: Final[tuple[str, str]] = ("#155e75", "#5eead4")
+CTK_NAV_SELECTED_FG: Final[tuple[str, str]] = ("#1D4ED8", "#2563EB")
+CTK_NAV_SELECTED_HOVER: Final[tuple[str, str]] = ("#1E40AF", "#1E4ED8")
 CTK_NAV_SALES_SELECTED: Final[tuple[str, str]] = ("#15803d", "#22c55e")
 CTK_NAV_SALES_HOVER: Final[tuple[str, str]] = ("#166534", "#4ade80")
-CTK_NAV_BORDER_ACCENT: Final[tuple[str, str]] = ("#06b6d4", "#22d3ee")
+CTK_NAV_BORDER_ACCENT: Final[tuple[str, str]] = ("#2563EB", "#2563EB")
 CTK_NAV_BORDER_SALES: Final[tuple[str, str]] = ("#16a34a", "#4ade80")
 CTK_NAV_BORDER_MUTED: Final[tuple[str, str]] = ("#cbd5e1", "#475569")
-CTK_NAV_TEXT_MUTED: Final[tuple[str, str]] = ("#475569", "#94a3b8")
-CTK_NAV_HOVER_SURFACE: Final[tuple[str, str]] = ("#f1f5f9", "#1e293b")
+CTK_NAV_TEXT_MUTED: Final[tuple[str, str]] = ("#64748b", "#94A3B8")
+CTK_NAV_HOVER_SURFACE: Final[tuple[str, str]] = ("#f1f5f9", "#334155")
 CTK_HEADER_ACCENT_TEXT: Final[tuple[str, str]] = ("#0f766e", "#5eead4")

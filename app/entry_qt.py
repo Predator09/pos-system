@@ -16,7 +16,7 @@ from app.config import APP_NAME
 from app.database.connection import db
 from app.database.migrations import DatabaseMigrations
 from app.services.app_settings import AppSettings
-from app.services.install_code_gate import ensure_first_run_install_code
+from app.services.install_code_gate import ensure_install_code
 from app.ui_qt.main_window import MainQtWindow
 from app.ui_qt.styles import get_qt_stylesheet
 
@@ -25,9 +25,9 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setStyle("Fusion")
-    app.setFont(QFont("Segoe UI", 11))
+    app.setFont(QFont("Segoe UI", 14))
     app.setStyleSheet(get_qt_stylesheet(AppSettings().get_appearance()))
-    if not ensure_first_run_install_code():
+    if not ensure_install_code():
         return 0
 
     migrations = DatabaseMigrations(db)

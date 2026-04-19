@@ -7,7 +7,7 @@ WHAT TO COPY
 
 HOW TO RUN
   Double-click SmartStock.exe. Python is not required on the new PC.
-  On the first run you will be asked for the installation code once.
+  You will be asked for the installation code on first run and about every 60 days after that.
 
 WHERE DATA IS STORED
   Shop database and settings:  %LOCALAPPDATA%\SmartStock

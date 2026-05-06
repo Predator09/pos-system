@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ class CriticalFlowTests(unittest.TestCase):
         self._original_db_path = db.db_path
         self._original_backups_dir = backup_service.backups_dir
         self._original_db_backups_dir = backup_service.db_backups_dir
+        self._original_json_backups_dir = backup_service.json_backups_dir
 
         db.close()
         db.reconfigure(self._tmp_path / "test.sqlite3")
@@ -25,10 +27,12 @@ class CriticalFlowTests(unittest.TestCase):
 
         backup_service.backups_dir = lambda: self._tmp_path / "backups"
         backup_service.db_backups_dir = lambda: self._tmp_path / "backups" / "db"
+        backup_service.json_backups_dir = lambda: self._tmp_path / "backups" / "json"
 
     def tearDown(self):
         backup_service.backups_dir = self._original_backups_dir
         backup_service.db_backups_dir = self._original_db_backups_dir
+        backup_service.json_backups_dir = self._original_json_backups_dir
         db.close()
         db.reconfigure(self._original_db_path)
         self._tmp.cleanup()
@@ -89,6 +93,17 @@ class CriticalFlowTests(unittest.TestCase):
         db_files = list((self._tmp_path / "backups" / "db").glob("backup_*.db"))
         self.assertEqual(len(db_files), 1)
         self.assertGreater(db_files[0].stat().st_size, 0)
+
+        v1_files = list((self._tmp_path / "backups" / "json").glob("backup_*.json"))
+        self.assertEqual(len(v1_files), 1)
+        v1 = json.loads(v1_files[0].read_text(encoding="utf-8"))
+        self.assertEqual(v1.get("version"), 1)
+        self.assertIn("timestamp", v1)
+        self.assertIn("data", v1)
+        self.assertEqual(
+            set(v1["data"].keys()),
+            {"products", "sales", "sale_items", "inventory_movements"},
+        )
 
         db.execute("DELETE FROM sale_returns")
         db.execute("DELETE FROM sales")

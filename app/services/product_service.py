@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.database.connection import db
 from app.database.sync import SyncOperation, SyncTracker
+from app.services.app_state import guard_writes
 from app.services.audit_service import AuditService
 
 
@@ -198,6 +199,7 @@ class ProductService:
         selling_price: float,
         **kwargs,
     ):
+        guard_writes()
         bc = ProductService._norm_barcode(kwargs.get("barcode"))
         cursor = db.execute(
             """
@@ -234,6 +236,7 @@ class ProductService:
         return self.get_product(product_id)
 
     def update_product(self, product_id: int, **kwargs):
+        guard_writes()
         product = self.get_product(product_id)
         if not product:
             return None
@@ -260,6 +263,7 @@ class ProductService:
 
     def set_product_image_from_file(self, product_id: int, source_path: str) -> str:
         """Copy image into ``data/product_images`` and set ``products.image_path``."""
+        guard_writes()
         if not self.get_product(product_id):
             raise ValueError("Product not found")
         src = Path(source_path)
@@ -283,6 +287,7 @@ class ProductService:
         return new_path
 
     def adjust_stock_delta(self, product_id: int, delta: float):
+        guard_writes()
         p = self.get_product(product_id)
         if not p:
             return None
@@ -348,6 +353,7 @@ class ProductService:
         return [dict(r) for r in rows]
 
     def update_stock(self, product_id: int, quantity: float):
+        guard_writes()
         db.execute(
             """
             UPDATE products SET quantity_in_stock = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
@@ -363,6 +369,7 @@ class ProductService:
         )
 
     def bulk_deactivate(self, product_ids: list[int]):
+        guard_writes()
         if not product_ids:
             return 0
         placeholders = ",".join("?" * len(product_ids))
@@ -378,6 +385,7 @@ class ProductService:
         return len(product_ids)
 
     def bulk_add_stock(self, product_ids: list[int], delta: float):
+        guard_writes()
         if not product_ids:
             return 0
         n = 0
@@ -387,6 +395,7 @@ class ProductService:
         return n
 
     def bulk_set_minimum_stock(self, product_ids: list[int], minimum: float):
+        guard_writes()
         if not product_ids:
             return 0
         placeholders = ",".join("?" * len(product_ids))
@@ -404,6 +413,7 @@ class ProductService:
 
     def bulk_adjust_selling_price_percent(self, product_ids: list[int], percent: float):
         """percent=10 means +10%% to selling_price."""
+        guard_writes()
         if not product_ids:
             return 0
         factor = 1.0 + float(percent) / 100.0
@@ -423,6 +433,7 @@ class ProductService:
 
     def upsert_product_from_row(self, row: dict) -> tuple[str, int]:
         """Import: match by code. Returns ('insert'|'update', id)."""
+        guard_writes()
         code = (row.get("code") or "").strip()
         if not code:
             raise ValueError("missing code")

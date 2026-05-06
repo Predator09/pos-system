@@ -8,6 +8,7 @@ from datetime import datetime
 from app.database.connection import db
 from app.database.sync import SyncOperation, SyncTracker
 from app.services.app_logging import log_exception
+from app.services.app_state import guard_writes
 from app.services.audit_service import AuditService
 
 
@@ -41,6 +42,7 @@ class PurchaseService:
         Increments ``quantity_in_stock``. When ``update_average_cost`` is True, sets product
         ``cost_price`` to a **weighted moving average** of existing stock and this receipt.
         """
+        guard_writes()
         if not lines:
             raise ValueError("Add at least one line item.")
         cleaned: list[tuple[int, float, float]] = []

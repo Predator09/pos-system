@@ -36,6 +36,36 @@ def _money(amount: float) -> str:
 _RECEIPT_TEXT_WIDTH = 40
 
 
+def _divider(char: str = "-") -> str:
+    return char * _RECEIPT_TEXT_WIDTH
+
+
+def _safe_text(value: object, default: str = "") -> str:
+    txt = str(value if value is not None else "").strip()
+    return txt or default
+
+
+def _kv_line(label: str, value: str) -> str:
+    head = f"{label}: "
+    room = max(0, _RECEIPT_TEXT_WIDTH - len(head))
+    return f"{head}{value[:room]}"
+
+
+def _amount_line(label: str, amount: float, *, bold: bool = False) -> str:
+    money = _money(amount)
+    left = label.strip() or "Amount"
+    space = _RECEIPT_TEXT_WIDTH - len(left) - len(money)
+    if space < 1:
+        line = f"{left} {money}"
+        return f"*{line}*" if bold else line
+    line = f"{left}{' ' * space}{money}"
+    return f"*{line}*" if bold else line
+
+
+def _wrap_item_name(name: str) -> list[str]:
+    return textwrap.wrap(name, width=_RECEIPT_TEXT_WIDTH, break_long_words=True, replace_whitespace=False) or [name]
+
+
 def _business_contact_wrapped_lines() -> list[str]:
     """Phone, email, then address lines — each wrapped for narrow thermal receipts."""
     s = ShopSettings()
@@ -97,60 +127,67 @@ def format_receipt_plaintext(
     name = shop_name if shop_name is not None else get_display_shop_name()
     lines: list[str] = []
     if include_shop_banner:
-        lines.extend([name.center(_RECEIPT_TEXT_WIDTH), "=" * _RECEIPT_TEXT_WIDTH])
+        lines.extend([name.center(_RECEIPT_TEXT_WIDTH), _divider("=")])
         contact = _business_contact_wrapped_lines()
         if contact:
             lines.extend([ln.center(_RECEIPT_TEXT_WIDTH) for ln in contact])
-            lines.append("")
+        lines.append(_divider("="))
     raw_dt = str(sale.get("sale_date") or "").strip()
     date_line = format_iso_datetime_for_display(raw_dt) if raw_dt else ""
-    lines.extend(
-        [
-            f"Invoice: {sale.get('invoice_number', '')}",
-            f"Date: {date_line}",
-        ]
-    )
+    lines.extend(["TAX INVOICE", _divider("-")])
+    lines.extend([_kv_line("Invoice", _safe_text(sale.get("invoice_number"), "N/A")), _kv_line("Date", _safe_text(date_line, "N/A"))])
     staff = (sale.get("cashier_name") or "").strip()
     if staff:
-        lines.append(f"Served by: {staff}")
-    lines.extend(["", "Items:"])
+        lines.append(_kv_line("Served by", staff))
+    lines.extend([_divider("-"), "ITEMS", _divider("-")])
     for it in sale.get("items") or []:
         nm = (it.get("name") or "").strip() or "Item"
         cd = (it.get("code") or "").strip()
-        qty = it.get("quantity", 0)
+        qty = float(it.get("quantity", 0) or 0)
         total = float(it.get("total", 0))
-        if cd:
-            lines.append(f"  {nm}  ({cd})")
+        display_name = f"{nm} ({cd})" if cd else nm
+        lines.extend(_wrap_item_name(display_name))
+        qty_text = f"{qty:g}"
+        unit = (total / qty) if abs(qty) > 1e-9 else total
+        item_line = f"  {qty_text} x {_money(unit)}"
+        space = _RECEIPT_TEXT_WIDTH - len(item_line) - len(_money(total))
+        if space < 1:
+            lines.append(f"{item_line} {_money(total)}")
         else:
-            lines.append(f"  {nm}")
-        lines.append(f"    x{qty}  {_money(total)}")
+            lines.append(f"{item_line}{' ' * space}{_money(total)}")
     lines.extend(
         [
-            "",
-            f"Subtotal: {_money(float(sale.get('subtotal', 0)))}",
-            f"Discount: {_money(float(sale.get('discount_amount', 0)))}",
-            f"Total: {_money(float(sale.get('total_amount', 0)))}",
+            _divider("-"),
+            _amount_line("Subtotal", float(sale.get("subtotal", 0))),
+            _amount_line("Discount", float(sale.get("discount_amount", 0))),
+            _divider("-"),
+            _amount_line("TOTAL", float(sale.get("total_amount", 0)), bold=True),
         ]
     )
     refund_total = float(sale.get("refund_total") or 0)
     if refund_total > 1e-9:
-        lines.append(f"Refunded to date: {_money(refund_total)}")
+        lines.extend([_divider("-"), _amount_line("Refunded to date", refund_total)])
         orig = float(sale.get("total_amount") or 0)
         net_after = round(orig - refund_total, 2)
-        lines.append(f"Net after refunds: {_money(net_after)}")
+        lines.append(_amount_line("Net after refunds", net_after))
         memos = sale.get("refund_memos") or []
         if memos:
-            lines.append("Credit memos:")
+            lines.extend(["", "Credit memos"])
             for m in memos:
                 cn = (m.get("credit_memo_number") or "").strip() or "—"
                 ta = float(m.get("total_refund_amount") or 0)
-                lines.append(f"  {cn}  {_money(ta)}")
+                memo_head = f"  {cn}"
+                space = _RECEIPT_TEXT_WIDTH - len(memo_head) - len(_money(ta))
+                if space < 1:
+                    lines.append(f"{memo_head} {_money(ta)}")
+                else:
+                    lines.append(f"{memo_head}{' ' * space}{_money(ta)}")
     lines.extend(
         [
-            "",
-            f"Payment: {sale.get('payment_method', '')}",
-            "",
-            "Thank you.",
+            _divider("-"),
+            _kv_line("Payment", _safe_text(sale.get("payment_method"), "N/A")),
+            _divider("="),
+            "Thank you for your purchase!".center(_RECEIPT_TEXT_WIDTH),
         ]
     )
     return "\n".join(lines)

@@ -41,7 +41,7 @@ or equivalently:
 python run_qt.py
 ```
 
-You are prompted for the **installation code** on first launch and again **every 60 days** (same value as the Inno Setup wizard; set `INSTALL_CODE_REQUIRED` in `app/config.py` and match `INSTALL_CODE` in `installer/SmartStock.iss`). Optional env: `SMARTSTOCK_INSTALL_REVERIFY_DAYS`. Then the app creates the database and applies migrations. Sign in with your user (see below).
+You are prompted for the **installation code** on first launch and again **every 60 days** (same value as the Inno Setup wizard; set env `SMARTSTOCK_INSTALL_CODE_SHA256` [preferred] or `SMARTSTOCK_INSTALL_CODE`, and match `INSTALL_CODE` in `installer/SmartStock.iss`). Optional env: `SMARTSTOCK_INSTALL_REVERIFY_DAYS`. Then the app creates the database and applies migrations. Sign in with your user (see below).
 
 **Data location**
 
@@ -117,7 +117,7 @@ Persisted appearance (light/dark) is stored next to the database under the app d
 |------|---------|
 | `run.py` / `run_qt.py` | Application entry (PySide6) |
 | `app/entry_qt.py` | Qt bootstrap (migrations, stylesheet, main window) |
-| `app/config.py` | App and business constants (including `INSTALL_CODE_REQUIRED`) |
+| `app/config.py` | App and business constants |
 | `app/runtime_paths.py` | Resolves the writable data directory (dev vs frozen exe) |
 | `app/database/` | SQLite connection, migrations, sync helpers |
 | `app/services/` | Auth, products, sales, backup, settings |

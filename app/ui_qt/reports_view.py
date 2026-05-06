@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -184,7 +185,7 @@ class ReportsView(QWidget):
         day_block_l.addWidget(QLabel("<b>Sales by calendar day</b>"))
         self._day_table = QTableWidget(0, 3)
         self._day_table.setHorizontalHeaderLabels(["Day", "Invoices", "Net"])
-        self._stretch_col(self._day_table, 0)
+        self._configure_sales_by_day_columns(self._day_table)
         self._day_table.setMaximumHeight(280)
         day_block_l.addWidget(self._day_table)
         self._day_block.setVisible(False)
@@ -193,16 +194,23 @@ class ReportsView(QWidget):
         daily_l.addWidget(QLabel("<b>Payment mix</b>"))
         self._pay_table = QTableWidget(0, 3)
         self._pay_table.setHorizontalHeaderLabels(["Method", "Invoices", "Net"])
-        self._stretch_col(self._pay_table, 0)
+        self._configure_payment_mix_columns(self._pay_table)
         self._pay_table.setMaximumHeight(220)
         daily_l.addWidget(self._pay_table)
 
         daily_l.addWidget(QLabel("<b>Top sellers (by revenue)</b>"))
         self._top_table = QTableWidget(0, 4)
         self._top_table.setHorizontalHeaderLabels(["PC", "Product", "Qty", "Revenue"])
-        self._stretch_col(self._top_table, 1)
+        self._configure_top_sellers_columns(self._top_table)
         self._top_table.setMinimumHeight(200)
         daily_l.addWidget(self._top_table, 1)
+
+        daily_l.addWidget(QLabel("<b>Item Sales Summary</b>"))
+        self._item_sales_tbl = QTableWidget(0, 3)
+        self._item_sales_tbl.setHorizontalHeaderLabels(["Item", "Qty Sold", "Revenue"])
+        self._item_sales_tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._configure_item_sales_summary_columns(self._item_sales_tbl)
+        daily_l.addWidget(self._item_sales_tbl, 1)
 
         scroll.setWidget(daily_inner)
         daily_outer_l.addWidget(scroll)
@@ -313,6 +321,39 @@ class ReportsView(QWidget):
     @staticmethod
     def _stretch_col(table: QTableWidget, col: int) -> None:
         table.horizontalHeader().setSectionResizeMode(col, QHeaderView.Stretch)
+
+    @staticmethod
+    def _configure_sales_by_day_columns(table: QTableWidget) -> None:
+        """Invoices and Net size to content so currency is not elided; Day stretches."""
+        h = table.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.Stretch)
+        h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+
+    @staticmethod
+    def _configure_payment_mix_columns(table: QTableWidget) -> None:
+        """Method / Invoices / Net: non-stretch columns get real widths so Net is readable."""
+        h = table.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+
+    @staticmethod
+    def _configure_top_sellers_columns(table: QTableWidget) -> None:
+        """PC / Qty / Revenue size to content so currency is not elided; Product stretches."""
+        h = table.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(1, QHeaderView.Stretch)
+        h.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+
+    @staticmethod
+    def _configure_item_sales_summary_columns(table: QTableWidget) -> None:
+        """Qty / Revenue size to content; Item stretches."""
+        h = table.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.Stretch)
+        h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(2, QHeaderView.ResizeToContents)
 
     def _today_range(self) -> None:
         self._start.setText(_today())
@@ -466,6 +507,18 @@ class ReportsView(QWidget):
                 top_rows.append(
                     (r.get("code"), r.get("name"), qv, format_money(float(r.get("revenue") or 0))),
                 )
+            items = self._svc.item_sales_summary(start, end)
+            item_rows = []
+            for r in items:
+                q = float(r.get("qty_sold") or 0)
+                qv = f"{q:g}" if q == int(q) else f"{q:.2f}"
+                item_rows.append(
+                    (
+                        r.get("name"),
+                        qv,
+                        format_money(float(r.get("revenue") or 0)),
+                    )
+                )
             pur_data = self._svc.purchase_receipts_in_range(start, end)
             pur_rows = [
                 (
@@ -486,7 +539,16 @@ class ReportsView(QWidget):
 
         self._fill_table(self._day_table, day_rows)
         self._fill_table(self._pay_table, pay_rows)
+        for c in (1, 2):
+            self._day_table.resizeColumnToContents(c)
+        for c in (0, 1, 2):
+            self._pay_table.resizeColumnToContents(c)
         self._fill_table(self._top_table, top_rows)
+        self._fill_table(self._item_sales_tbl, item_rows)
+        for c in (0, 2, 3):
+            self._top_table.resizeColumnToContents(c)
+        for c in (1, 2):
+            self._item_sales_tbl.resizeColumnToContents(c)
         self._fill_table(self._pur_table, pur_rows)
         for i, pr in enumerate(pur_data):
             cell = self._pur_table.item(i, 0)

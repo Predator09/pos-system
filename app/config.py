@@ -1,14 +1,75 @@
+import importlib
 import os
+import pkgutil
+import re
 
 # App
 APP_NAME = "SmartStock"
-VERSION = "1.0.0"
+APP_VERSION = "1.0.0"
 
-# Install gate secret (same value as ``INSTALL_CODE`` in ``installer/SmartStock.iss``):
-# - Prefer ``SMARTSTOCK_INSTALL_CODE_SHA256`` (hex digest of the code).
-# - Fallback to ``SMARTSTOCK_INSTALL_CODE`` (plain text).
-INSTALL_CODE_REQUIRED_SHA256 = (os.getenv("SMARTSTOCK_INSTALL_CODE_SHA256") or "").strip().lower()
-INSTALL_CODE_REQUIRED = (os.getenv("SMARTSTOCK_INSTALL_CODE") or "AlhamdulilA").strip()
+
+def get_app_version() -> str:
+    """Return the application semantic version string."""
+    return APP_VERSION
+
+
+def parse_version(version_str: str) -> tuple[int, ...]:
+    """Parse a dotted version string (e.g. ``1.2.3`` or ``v1.2.3``) into a tuple of integers."""
+    s = (version_str or "").strip()
+    if s[:1] in ("v", "V"):
+        s = s[1:].strip()
+    if not s:
+        raise ValueError("version string is empty")
+    parts = s.split(".")
+    return tuple(int(p) for p in parts)
+
+
+def safe_parse_version(version_str: str) -> tuple[int, ...]:
+    """Like :func:`parse_version`, but return ``(0, 0, 0)`` if parsing fails (and log a warning)."""
+    try:
+        return parse_version(version_str)
+    except (TypeError, ValueError) as exc:
+        from app.services.app_logging import get_logger
+
+        get_logger().warning(
+            "safe_parse_version: invalid version string %r (%s); using (0, 0, 0)",
+            version_str,
+            exc,
+        )
+        return (0, 0, 0)
+
+
+def is_newer_version(v1: str, v2: str) -> bool:
+    """Return True if version *v1* is strictly greater than *v2* (numeric dotted segments)."""
+    a = parse_version(v1)
+    b = parse_version(v2)
+    n = max(len(a), len(b))
+    a_pad = a + (0,) * (n - len(a))
+    b_pad = b + (0,) * (n - len(b))
+    return a_pad > b_pad
+
+
+# Backward-compatible alias (same value as ``APP_VERSION``).
+VERSION = APP_VERSION
+
+def compute_max_supported_db_version() -> str:
+    """Derive max supported ``db_version`` from available ``mNNN_*`` migration modules."""
+    package = importlib.import_module("app.database.migrations")
+    max_n = 0
+    for module_info in pkgutil.iter_modules(package.__path__):
+        m = re.match(r"^m(\d+)_", module_info.name, flags=re.IGNORECASE)
+        if not m:
+            continue
+        n = int(m.group(1))
+        if n > max_n:
+            max_n = n
+    return f"0.0.{max_n}"
+
+
+# Highest ``db_version`` stored in ``app_metadata`` that this build can open.
+# If the database label is newer, startup exits (DB from a newer SmartStock).
+# Computed from available ``mNNN_*`` migration modules.
+MAX_SUPPORTED_DB_VERSION = compute_max_supported_db_version()
 
 # Re-prompt for the same code after this many days (approx. two months).
 try:
@@ -51,4 +112,4 @@ def format_app_footer_text() -> str:
     """Single line for main-window status/footer (shop name from settings when available)."""
     from app.services.shop_settings import get_display_shop_name
 
-    return f"{APP_NAME} v{VERSION} · {get_display_shop_name()} · Offline-first · Local database"
+    return f"{APP_NAME} v{get_app_version()} · {get_display_shop_name()} · Offline-first · Local database"

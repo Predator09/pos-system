@@ -24,8 +24,10 @@ from PySide6.QtWidgets import (
 from app.config import PAD_LG, PAD_MD, PAD_SM, WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH, format_app_footer_text
 from app.services.shop_settings import get_display_shop_name
 from app.services.app_settings import AppSettings, theme_for_appearance
+import app.services.app_state as app_state
+from app.services.app_state import is_recovery_mode
 from app.services.backup_service import BackupService
-
+from app.services.dialog_service import DialogService
 from app.ui_qt.gallery_view import GalleryView
 from app.ui_qt.home_view import HomeView
 from app.ui_qt.login_view import LoginView
@@ -39,7 +41,7 @@ from app.ui_qt.settings_view import SettingsView
 from app.ui_qt.motion_qt import fade_in_widget
 from app.ui_qt.profile_dialog_qt import ProfileDialogQt
 from app.ui_qt.styles import get_qt_stylesheet
-from app.ui_qt.helpers_qt import info_message
+from app.ui_qt.helpers_qt import info_message, warning_message
 from app.services.product_service import ProductService
 
 # (display label, screen key, show chevron like reference nav)
@@ -65,6 +67,9 @@ _TOP_BAR_META: dict[str, tuple[str, str]] = {
 
 # Top-bar global search hidden on these screens (more vertical room / less clutter).
 _TOP_BAR_HIDE_GLOBAL_SEARCH = frozenset({"home", "sales", "purchases", "reports", "settings"})
+
+# In recovery mode, block navigation to screens that perform or trigger inventory/sales writes.
+_RECOVERY_BLOCK_KEYS = frozenset({"products", "sales", "purchases"})
 
 
 def _nav_icon(style: QStyle, key: str) -> QIcon:
@@ -105,6 +110,8 @@ class MainQtWindow(QMainWindow):
         self._bell_btn: QPushButton | None = None
         self._profile_btn: QPushButton | None = None
         self._signout_btn: QPushButton | None = None
+        self._warned_no_backup_in_recovery = False
+        self._empty_db_prompt_shown = False
 
         self._root_stack = QStackedWidget()
         self.setCentralWidget(self._root_stack)
@@ -132,8 +139,6 @@ class MainQtWindow(QMainWindow):
 
     def enter_app(self, user: dict) -> None:
         self.current_user = user
-        backup = BackupService()
-        backup.auto_backup_daily()
         if self._shell is None:
             self._build_shell()
             self._root_stack.addWidget(self._shell)
@@ -146,6 +151,49 @@ class MainQtWindow(QMainWindow):
         self.show_screen("home")
         self._root_stack.setCurrentWidget(self._shell)
         fade_in_widget(self._shell, 300)
+        self._maybe_prompt_empty_database_once()
+        self._maybe_warn_no_backup_in_recovery()
+
+    def _open_settings_restore_section(self) -> None:
+        self.show_screen("settings")
+        sv = self._screens.get("settings")
+        tabs = getattr(sv, "_tabs", None)
+        if tabs is not None and hasattr(tabs, "setCurrentIndex"):
+            try:
+                tabs.setCurrentIndex(3)  # Data & backup tab
+            except Exception:
+                pass
+
+    def _maybe_prompt_empty_database_once(self) -> None:
+        if self._empty_db_prompt_shown:
+            return
+        if getattr(app_state, "database_status", "ok") != "empty":
+            return
+        self._empty_db_prompt_shown = True
+        try:
+            if DialogService.two_button_choice(
+                "Database warning",
+                "Your database appears empty.\n"
+                "If this is unexpected, restore from a backup before continuing.",
+                "Restore Backup",
+                "Continue Anyway",
+                parent=self,
+                default_primary=True,
+            ):
+                self._open_settings_restore_section()
+        except Exception:
+            # Never break app startup because the advisory dialog failed.
+            pass
+
+    def _maybe_warn_no_backup_in_recovery(self) -> None:
+        if self._warned_no_backup_in_recovery or not is_recovery_mode():
+            return
+        summary = BackupService().latest_backup_summary()
+        has_json = bool(summary.get("has_json_backup"))
+        has_db = bool(summary.get("has_db_backup"))
+        if not has_json and not has_db:
+            self._warned_no_backup_in_recovery = True
+            warning_message(self, "Recovery mode", "No backup found. Your data may not be recoverable.")
 
     def _user_bar_text(self) -> str:
         u = self.current_user or {}
@@ -332,7 +380,27 @@ class MainQtWindow(QMainWindow):
 
         self._shell = shell
         self._update_top_bar("home")
+        self._sync_recovery_nav()
         self._apply_responsive_layout()
+
+    def _sync_recovery_nav(self) -> None:
+        recovery = is_recovery_mode()
+        gs = getattr(self, "_global_search", None)
+        if gs is not None:
+            gs.setEnabled(not recovery)
+            gs.setToolTip("Search is disabled during recovery mode" if recovery else "")
+        if self._nav_list is None:
+            return
+        for i, (_, key, _) in enumerate(_NAV):
+            item = self._nav_list.item(i)
+            if item is None:
+                continue
+            blocked = recovery and key in _RECOVERY_BLOCK_KEYS
+            flags = item.flags()
+            if blocked:
+                item.setFlags(flags & ~Qt.ItemFlag.ItemIsEnabled)
+            else:
+                item.setFlags(flags | Qt.ItemFlag.ItemIsEnabled)
 
     def _apply_responsive_layout(self) -> None:
         """Responsive shell sizing for narrow windows."""
@@ -392,6 +460,13 @@ class MainQtWindow(QMainWindow):
             sc.verticalScrollBar().setValue(0)
 
     def show_screen(self, screen_name: str) -> None:
+        if is_recovery_mode() and screen_name in _RECOVERY_BLOCK_KEYS:
+            info_message(
+                self,
+                "Recovery mode",
+                "This area is unavailable until the database is restored from backup (Settings).",
+            )
+            screen_name = "home"
         row = self._name_to_row.get(screen_name, 0)
         if self._nav_list is not None:
             self._nav_list.blockSignals(True)
@@ -405,6 +480,13 @@ class MainQtWindow(QMainWindow):
             screen.refresh()
 
     def add_product_to_sales_cart(self, product_id: int, quantity: float = 1.0) -> None:
+        if is_recovery_mode():
+            info_message(
+                self,
+                "Recovery mode",
+                "Point of Sale is unavailable until the database is restored.",
+            )
+            return
         self.show_screen("sales")
         sale = self._screens.get("sales")
         if sale is not None and hasattr(sale, "add_to_cart_by_product_id"):
@@ -420,6 +502,7 @@ class MainQtWindow(QMainWindow):
         if self._brand_name_label is not None:
             self._brand_name_label.setText(get_display_shop_name())
         self._refresh_footer_text()
+        self._sync_recovery_nav()
         row = self._nav_list.currentRow() if self._nav_list is not None else 0
         if row < 0 or row >= len(_NAV):
             row = 0
@@ -430,6 +513,8 @@ class MainQtWindow(QMainWindow):
 
     def _on_global_search_submit(self) -> None:
         if self._shell is None or self._global_search is None:
+            return
+        if is_recovery_mode():
             return
         q = self._global_search.text().strip()
         if not q:

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from datetime import date
+
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -21,13 +25,20 @@ from PySide6.QtWidgets import (
 )
 
 from app import config as app_config
+from app.database.connection import db
+from app.database.restore_controller import restore_from_backup_file
 from app.config import PAD_MD
 from app.services.app_settings import AppSettings
+from app.services.app_state import set_database_health
 from app.services.auth_service import AuthService
 from app.services.backup_service import BackupService
+from app.services.dialog_service import DialogService
+from app.services.license_service import LicenseService
 from app.services.shop_settings import ShopSettings, get_display_shop_name
+from app.ui.date_display import format_iso_date_as_display
 from app.ui_qt.helpers_qt import info_message, warning_message
 from app.ui_qt.icon_utils import set_button_icon
+from app.ui_qt.license_activation_dialog import LicenseActivationDialog
 from app.ui_qt.logo_widget import ShopLogoLabel
 from app.ui_qt.manage_users_qt import ManageUsersDialogQt
 
@@ -94,12 +105,34 @@ class SettingsView(QWidget):
 
         about = QGroupBox("About")
         bl = QVBoxLayout(about)
-        bl.addWidget(QLabel(f"{app_config.APP_NAME} · version {app_config.VERSION}"))
+        bl.addWidget(QLabel(f"{app_config.APP_NAME} · version {app_config.get_app_version()}"))
         self._about_footer = QLabel()
         self._about_footer.setObjectName("muted")
         self._about_footer.setWordWrap(True)
         bl.addWidget(self._about_footer)
         v.addWidget(about)
+
+        lic = QGroupBox("License / subscription")
+        ll = QFormLayout(lic)
+        self._license_shop_val = QLabel()
+        self._license_expiry_val = QLabel()
+        self._license_days_val = QLabel()
+        self._license_device_val = QLabel()
+        self._license_device_val.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._license_note_val = QLabel()
+        self._license_note_val.setObjectName("muted")
+        self._license_note_val.setWordWrap(True)
+        ll.addRow("Shop", self._license_shop_val)
+        ll.addRow("Expiry date", self._license_expiry_val)
+        ll.addRow("Days remaining", self._license_days_val)
+        ll.addRow("Device ID", self._license_device_val)
+        ll.addRow("Status", self._license_note_val)
+        self._renew_license_btn = QPushButton("Load Renewal License")
+        self._renew_license_btn.setCursor(Qt.PointingHandCursor)
+        self._renew_license_btn.clicked.connect(self._on_load_renewal_license)
+        set_button_icon(self._renew_license_btn, "fa5s.file-contract")
+        ll.addRow(self._renew_license_btn)
+        v.addWidget(lic)
 
         v.addStretch(1)
         return self._wrap_scroll(page)
@@ -234,6 +267,14 @@ class SettingsView(QWidget):
         row.addStretch(1)
         gl.addLayout(row)
 
+        row2 = QHBoxLayout()
+        self._restore_backup_btn = QPushButton("Restore from Backup", clicked=self._on_restore_from_backup)
+        self._restore_backup_btn.setObjectName("ghost")
+        set_button_icon(self._restore_backup_btn, "fa5s.upload")
+        row2.addWidget(self._restore_backup_btn)
+        row2.addStretch(1)
+        gl.addLayout(row2)
+
         note = QLabel(
             "JSON backups include products, sales, and purchases for this shop database. "
             "Keep copies somewhere safe if you replace this computer."
@@ -367,8 +408,112 @@ class SettingsView(QWidget):
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(p))):
             warning_message(self.window(), "Folder", f"Could not open:\n{p}")
 
+    def _on_restore_from_backup(self) -> None:
+        if not AuthService.is_owner(getattr(self._main, "current_user", None)):
+            warning_message(self.window(), "Restore", "Only the shop owner can restore from a backup.")
+            return
+        summary = self._backup.latest_backup_summary()
+        json_s = (summary.get("latest_json_backup") or summary.get("json_backup") or "").strip().lower()
+        db_s = (summary.get("latest_db_backup") or summary.get("db_backup") or "").strip().lower()
+        no_json = json_s.startswith("no json backups yet")
+        no_db = db_s.startswith("no sqlite backup yet")
+        if no_json and no_db:
+            warning_message(self.window(), "Restore", "No backup found. Your data may not be recoverable.")
+        if not DialogService.question_yes_cancel(
+            "Restore from backup",
+            "Restoring a backup will overwrite your current data.\n"
+            "A safety copy will be created automatically.",
+            parent=self.window(),
+            default_yes=False,
+        ):
+            return
+        DialogService.info(
+            "Restore recommendation",
+            "Recommended:\n"
+            "- Use .db backup for full system restore\n"
+            "- Use JSON only if .db is unavailable",
+            parent=self.window(),
+        )
+        start_dir = str(self._backup.backup_dir.resolve())
+        path, _ = QFileDialog.getOpenFileName(
+            self.window(),
+            "Select backup file",
+            start_dir,
+            "Backups (*.json *.db);;JSON (*.json);;SQLite (*.db);;All (*.*)",
+        )
+        if not path:
+            return
+
+        lower_path = path.lower().strip()
+        restore_kind: str | None = None
+        restore_caption = ""
+        if lower_path.endswith(".db"):
+            restore_kind = "db"
+            restore_caption = (
+                "FULL SYSTEM RESTORE (Recommended)\n"
+                "This will restore the entire system."
+            )
+        elif lower_path.endswith(".json"):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    raw = json.load(f)
+            except Exception as e:
+                warning_message(self.window(), "Restore", f"Could not read backup file: {e}")
+                return
+            if isinstance(raw, dict) and "version" in raw and isinstance(raw.get("data"), dict):
+                restore_kind = "structured_json"
+                restore_caption = (
+                    "PARTIAL RESTORE (Advanced)\n"
+                    "This may not restore all system data."
+                )
+            elif isinstance(raw, dict) and ("products" in raw or "sales" in raw):
+                restore_kind = "legacy_json"
+                restore_caption = (
+                    "FULL DATA RESTORE\n"
+                    "This will restore most business data."
+                )
+        if restore_kind is None:
+            warning_message(self.window(), "Restore", "Unknown backup type")
+            return
+
+        if not DialogService.question_yes_cancel(
+            "Confirm restore type",
+            f"{restore_caption}\n\n"
+            "This will overwrite current data. A safety backup will be created.",
+            parent=self.window(),
+            default_yes=False,
+        ):
+            return
+
+        result = restore_from_backup_file(path, db.db_path, db)
+        if result.get("status") == "success":
+            # Ensure no stale handles remain after restore; reconnect and clear recovery flags.
+            try:
+                db.close()
+            except Exception:
+                pass
+            try:
+                db.connect()
+                set_database_health("ok")
+                if hasattr(self._main, "refresh_shop_context_ui"):
+                    self._main.refresh_shop_context_ui()
+                self._sync_backup_status()
+            except Exception:
+                # Keep non-blocking behavior; restart guidance below still applies.
+                pass
+            info_message(self.window(), "Restore complete", result.get("message", "Restore finished."))
+            DialogService.info(
+                "Restart SmartStock",
+                "Please close and restart the application so all screens load the restored data.",
+                parent=self.window(),
+            )
+        else:
+            warning_message(self.window(), "Restore failed", result.get("message", "Unknown error."))
+
     def _sync_backup_status(self) -> None:
-        self._backup_status.setText(self._backup.latest_backup_summary())
+        self._backup_status.setText(
+            BackupService.backup_summary_as_text(self._backup.latest_backup_summary())
+        )
 
     def _on_manage_users(self) -> None:
         if not AuthService.is_owner(getattr(self._main, "current_user", None)):
@@ -378,6 +523,8 @@ class SettingsView(QWidget):
     def _sync_team_tab(self) -> None:
         owner = AuthService.is_owner(getattr(self._main, "current_user", None))
         self._manage_users_btn.setVisible(owner)
+        if hasattr(self, "_restore_backup_btn"):
+            self._restore_backup_btn.setVisible(owner)
         if owner:
             self._team_hint.setObjectName("")
             self._team_hint.setText(
@@ -398,7 +545,60 @@ class SettingsView(QWidget):
         self.sync_appearance_switch()
         from app.config import format_app_footer_text
 
-        self._about_footer.setText(format_app_footer_text())
+        support_lines = (
+            "Support: +220 3120136 / sawoebrima610@gmail.com\n"
+            "BY CODE10DIGITAL"
+        )
+        self._about_footer.setText(f"{format_app_footer_text()}\n{support_lines}")
         self._sync_receipt_ui()
         self._sync_backup_status()
         self._sync_team_tab()
+        self._sync_license_info()
+
+    def _on_load_renewal_license(self) -> None:
+        dlg = LicenseActivationDialog(self.window(), renewal_mode=True)
+        if dlg.exec() == QDialog.Accepted:
+            self._sync_license_info()
+            info_message(
+                self.window(),
+                "License updated",
+                "Your license was renewed successfully.",
+            )
+
+    def _sync_license_info(self) -> None:
+        info = LicenseService().get_license_info()
+        self._license_shop_val.setText(get_display_shop_name())
+        exp_raw = str(info.get("expiry_date") or "").strip()
+        if not exp_raw:
+            self._license_expiry_val.setText("N/A")
+        elif len(exp_raw) >= 10 and exp_raw[4] == "-" and exp_raw[7] == "-":
+            self._license_expiry_val.setText(format_iso_date_as_display(exp_raw[:10]))
+        else:
+            self._license_expiry_val.setText(exp_raw)
+
+        self._license_days_val.setText("—")
+        if exp_raw and len(exp_raw) >= 10 and exp_raw[4] == "-" and exp_raw[7] == "-":
+            try:
+                ed = date.fromisoformat(exp_raw[:10])
+                n = (ed - date.today()).days
+                self._license_days_val.setText(f"{n} day(s)")
+            except ValueError:
+                pass
+
+        self._license_device_val.setText(info.get("device_id") or "N/A")
+        status = str(info.get("status") or "unknown")
+        reason = str(info.get("reason") or "")
+        self._license_note_val.setText(reason or status.replace("_", " ").title())
+        warn_style = "color: #b86b00; font-weight: 600;"
+        if status == "expiring_soon":
+            self._license_expiry_val.setStyleSheet(warn_style)
+            self._license_note_val.setStyleSheet("color: #b86b00;")
+            self._license_days_val.setStyleSheet(warn_style)
+        elif status == "expired_grace":
+            self._license_expiry_val.setStyleSheet(warn_style)
+            self._license_note_val.setStyleSheet("color: #b86b00;")
+            self._license_days_val.setStyleSheet(warn_style)
+        else:
+            self._license_expiry_val.setStyleSheet("")
+            self._license_note_val.setStyleSheet("")
+            self._license_days_val.setStyleSheet("")

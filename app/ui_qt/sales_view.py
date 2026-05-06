@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QRadioButton,
     QSizePolicy,
@@ -30,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import PAD_LG, PAD_MD, PAD_SM
+from app.services.dialog_service import DialogButton
 from app.services.parked_sales_service import MAX_PARKED_TICKETS, ParkedSalesService
 from app.services.product_service import ProductService
 from app.services.sales_service import SalesService, cashier_display_name
@@ -1115,10 +1115,10 @@ class SalesView(QWidget):
                 "No = merge parked lines into this cart\n"
                 "Cancel = put ticket back",
             )
-            if r == QMessageBox.Cancel:
+            if r == DialogButton.CANCEL:
                 self._parked.insert(idx, ticket)
                 return
-            if r == QMessageBox.Yes:
+            if r == DialogButton.YES:
                 self._restore_ticket(ticket)
             elif not self._merge_ticket_lines(ticket):
                 self._parked.insert(idx, ticket)

@@ -269,6 +269,47 @@ class ReportsService:
             for r in rows
         ]
 
+    def item_sales_summary(self, start: date, end: date) -> list[dict]:
+        """Sold items grouped by product for inclusive date range."""
+        a = self._validate_iso(str(start))
+        b = self._validate_iso(str(end))
+        if a > b:
+            raise ValueError("Start date must be on or before end date.")
+        start_ts, end_ts = self._timestamp_range(a, b)
+        rows = db.fetchall(
+            """
+            SELECT
+                p.id AS product_id,
+                p.name AS name,
+                COALESCE(SUM(si.quantity), 0) AS qty_sold,
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            si.total_cents,
+                            CAST(ROUND(COALESCE(si.total, 0) * 100.0, 0) AS INTEGER)
+                        )
+                    ),
+                    0
+                ) AS revenue_cents
+            FROM sale_items si
+            JOIN sales s ON s.id = si.sale_id
+            JOIN products p ON p.id = si.product_id
+            WHERE s.sale_date >= ? AND s.sale_date < ?
+            GROUP BY p.id, p.name
+            ORDER BY qty_sold DESC, p.name COLLATE NOCASE ASC
+            """,
+            (start_ts, end_ts),
+        )
+        return [
+            {
+                "product_id": int(r["product_id"]),
+                "name": r["name"] or "",
+                "qty_sold": float(r["qty_sold"] or 0),
+                "revenue": cents_to_float(int(r["revenue_cents"] or 0)),
+            }
+            for r in rows
+        ]
+
     def inventory_valuation_snapshot(self) -> dict:
         """On-hand units, retail and cost value, and profit (retail − cost) for active lines."""
         row = db.fetchone(

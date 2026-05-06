@@ -334,7 +334,7 @@ class ProcessReturnDialogQt(QDialog):
         row.setSpacing(PAD_SM)
         row.addWidget(QLabel("Invoice #"))
         self._inv = QLineEdit()
-        self._inv.setPlaceholderText("e.g. INV-2026-04-11-00001")
+        self._inv.setPlaceholderText("e.g. INV-11-04-2026-00001")
         row.addWidget(self._inv, 1)
         fb = QPushButton("Find sale")
         fb.setCursor(Qt.PointingHandCursor)

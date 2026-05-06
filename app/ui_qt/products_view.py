@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QKeyEvent
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QKeyEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -70,11 +71,19 @@ class ProductEditorDialogQt(QDialog):
         self.product_id = product_id
         self.saved = False
         self.setWindowTitle("Product" if product_id else "New product")
-        self.resize(520, 600)
+        self.resize(560, 620)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(PAD_MD, PAD_MD, PAD_MD, PAD_MD)
         outer.setSpacing(PAD_MD)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(PAD_SM)
         f = QFormLayout()
         f.setHorizontalSpacing(PAD_MD)
         f.setVerticalSpacing(PAD_SM)
@@ -138,11 +147,15 @@ class ProductEditorDialogQt(QDialog):
                 self._expiry.setText(format_iso_date_as_display(ex0) if ex0 else "")
                 self._image.setText((p.get("image_path") or "") or "")
                 self._desc.setText(p.get("description") or "")
-            outer.addWidget(
+
+        if product_id:
+            content_layout.addWidget(
                 QLabel("PC is your internal product code. Barcode is for scanning (unique when set).")
             )
 
-        outer.addLayout(f)
+        content_layout.addLayout(f)
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self._save)
         bb.rejected.connect(self.reject)
@@ -151,6 +164,19 @@ class ProductEditorDialogQt(QDialog):
             save_btn.setObjectName("primary")
             set_button_icon(save_btn, "fa5s.save")
         outer.addWidget(bb)
+        self._fit_to_screen_height()
+
+    def _fit_to_screen_height(self) -> None:
+        """Keep the dialog inside the current screen so action buttons stay visible."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        max_h = max(460, int(available.height() * 0.9))
+        max_w = max(560, int(available.width() * 0.7))
+        self.setMaximumHeight(max_h)
+        self.setMaximumWidth(max_w)
+        self.resize(min(self.width(), max_w), min(self.height(), max_h))
 
     def _browse_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

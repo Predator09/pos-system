@@ -163,6 +163,12 @@ def db_backups_dir() -> Path:
     return p
 
 
+def json_backups_dir() -> Path:
+    p = shop_root() / "backups" / "json"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 def product_images_dir() -> Path:
     p = shop_root() / "product_images"
     p.mkdir(parents=True, exist_ok=True)
@@ -201,6 +207,9 @@ def open_shop_database(db, shop_id: str) -> None:
     save_last_shop_id(shop_id)
     db.reconfigure(str(database_path()))
     DatabaseMigrations(db).init_database()
+    from app.database.migration_runner import run_migrations
+
+    run_migrations(db)
     db.connect()
 
 

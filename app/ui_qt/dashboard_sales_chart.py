@@ -36,6 +36,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
 from app.config import CURRENCY_SYMBOL
+from app.ui.date_display import DISPLAY_DATE_FMT
 from app.ui.theme_tokens import SURFACE_ELEVATED_DARK, SURFACE_ELEVATED_LIGHT, TOKENS
 from app.ui_qt.helpers_qt import format_money
 
@@ -88,7 +89,7 @@ def _tick_label_x(key: str, mode: _SeriesMode) -> str:
             if h < 12:  return f"{h}a"
             if h == 12: return "12p"
             return f"{h - 12}p"
-        return date.fromisoformat(key[:10]).strftime("%a %d-%m")
+        return date.fromisoformat(key[:10]).strftime(DISPLAY_DATE_FMT)
     except Exception:
         return key
 
@@ -185,7 +186,10 @@ class DashboardSalesChart(QWidget):
                     label = _tick_label_x(key, mode)
                     QToolTip.showText(
                         event.globalPos(),
-                        f"<b>{label}</b><br>{format_money(val)}",
+                        (
+                            f"<span style='color:#FFFFFF; font-weight:700;'>{label}</span>"
+                            f"<br><span style='color:#FFFFFF;'>{format_money(val)}</span>"
+                        ),
                         self,
                     )
                 break

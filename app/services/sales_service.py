@@ -4,8 +4,10 @@ from datetime import date, datetime, timedelta
 from app.database.connection import db
 from app.database.sync import SyncOperation, SyncTracker
 from app.services.app_logging import log_exception
+from app.services.app_state import guard_writes
 from app.services.audit_service import AuditService
 from app.services.money import cents_to_float, decimal_money, to_cents
+from app.ui.date_display import format_iso_date_as_display
 
 
 def _local_sale_timestamp() -> str:
@@ -55,6 +57,7 @@ class SalesService:
         starts at local midnight: reports, \"today\" totals, and daily invoice numbering
         all follow that day boundary. Earlier sales stay in the database unchanged.
         """
+        guard_writes()
 
         # Calculate totals
         totals = self.calculate_cart_total(cart_items)
@@ -245,6 +248,7 @@ class SalesService:
         Each line: ``sale_item_id`` (int), ``quantity`` (float > 0).
         Restores stock and inserts ``sale_returns`` / ``sale_return_items``.
         """
+        guard_writes()
         if not lines:
             raise ValueError("Add at least one line to return.")
 
@@ -634,9 +638,10 @@ class SalesService:
     def _generate_invoice_number(self) -> str:
         """Next invoice for **today (local date)** — sequence resets each calendar day at local midnight.
 
-        Format ``INV-YYYY-MM-DD-NNNNN`` (older rows may use ``INVYYYYMMDD…`` from the global-id scheme).
+        Format ``INV-DD-MM-YYYY-NNNNN`` (day first). Older rows may use ``INV-YYYY-MM-DD-…`` or ``INVYYYYMMDD…``.
         """
         today = date.today().isoformat()
+        day_disp = format_iso_date_as_display(today)
         row = db.fetchone(
             """
             SELECT COUNT(*) AS n FROM sales
@@ -645,11 +650,12 @@ class SalesService:
             (today,),
         )
         n = int(row[0] or 0) + 1
-        return f"INV-{today}-{n:05d}"
+        return f"INV-{day_disp}-{n:05d}"
 
     def _generate_credit_memo_number(self) -> str:
-        """Next credit memo for **today** — ``CRT-YYYY-MM-DD-NNNNN``."""
+        """Next credit memo for **today** — ``CRT-DD-MM-YYYY-NNNNN`` (day first)."""
         today = date.today().isoformat()
+        day_disp = format_iso_date_as_display(today)
         row = db.fetchone(
             """
             SELECT COUNT(*) AS n FROM sale_returns
@@ -658,7 +664,7 @@ class SalesService:
             (today,),
         )
         n = int(row[0] or 0) + 1
-        return f"CRT-{today}-{n:05d}"
+        return f"CRT-{day_disp}-{n:05d}"
 
     @staticmethod
     def _is_unique_number_conflict(exc: sqlite3.IntegrityError, key: str) -> bool:
@@ -668,6 +674,7 @@ class SalesService:
     @staticmethod
     def _generate_invoice_number_in_tx(cur) -> str:
         today = date.today().isoformat()
+        day_disp = format_iso_date_as_display(today)
         cur.execute(
             """
             SELECT COUNT(*) AS n FROM sales
@@ -677,11 +684,12 @@ class SalesService:
         )
         row = cur.fetchone()
         n = int(row[0] or 0) + 1
-        return f"INV-{today}-{n:05d}"
+        return f"INV-{day_disp}-{n:05d}"
 
     @staticmethod
     def _generate_credit_memo_number_in_tx(cur) -> str:
         today = date.today().isoformat()
+        day_disp = format_iso_date_as_display(today)
         cur.execute(
             """
             SELECT COUNT(*) AS n FROM sale_returns
@@ -691,4 +699,4 @@ class SalesService:
         )
         row = cur.fetchone()
         n = int(row[0] or 0) + 1
-        return f"CRT-{today}-{n:05d}"
+        return f"CRT-{day_disp}-{n:05d}"

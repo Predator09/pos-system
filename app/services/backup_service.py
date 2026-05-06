@@ -5,9 +5,10 @@ from pathlib import Path
 
 from app.database.connection import db
 from app.database.db_backup import backup_database
+from app.database.json_backup import backup_to_json
 from app.database.sync import SyncTracker
 from app.services.app_logging import get_logger
-from app.services.shop_context import backups_dir, db_backups_dir
+from app.services.shop_context import backups_dir, db_backups_dir, json_backups_dir
 
 _PRODUCT_COLUMNS = (
     "id",
@@ -119,26 +120,101 @@ _PURCHASE_COLUMNS = (
 )
 
 
+_LAST_AUTO_BACKUP_FILENAME = "last_auto_backup.txt"
+
+
 class BackupService:
     def __init__(self):
         self.backup_dir = backups_dir()
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         self.sync = SyncTracker(db)
 
-    def latest_backup_summary(self) -> str:
-        """One-line status for dashboards / settings (newest ``backup_*.json`` by mtime)."""
+    @staticmethod
+    def backup_summary_as_text(summary: dict[str, str]) -> str:
+        """Format ``latest_backup_summary()`` for status labels (multi-line)."""
+        return "CODET10DIGITAL"
+
+    def latest_backup_summary(self) -> dict[str, str | bool]:
+        """Structured backup summary with latest JSON/DB backup display strings and newest timestamp."""
+
+        def _latest_glob(base: Path, pattern: str) -> tuple[str, float | None]:
+            try:
+                files = list(base.glob(pattern))
+            except OSError:
+                return "", None
+            if not files:
+                return "", None
+            try:
+                latest = max(files, key=lambda p: p.stat().st_mtime)
+                mt = latest.stat().st_mtime
+                dt = datetime.fromtimestamp(mt)
+                return f"{latest.name} · {dt.strftime('%d-%m-%Y %H:%M')}", mt
+            except OSError:
+                return "", None
+
+        json_parts: list[str] = []
+        mtimes: list[float] = []
+
+        leg, t1 = _latest_glob(self.backup_dir, "backup_*.json")
+        if leg:
+            json_parts.append(f"Full {leg}")
+            if t1 is not None:
+                mtimes.append(t1)
+
         try:
-            files = list(self.backup_dir.glob("backup_*.json"))
+            jdir = json_backups_dir()
         except OSError:
-            return "Backups folder unavailable."
-        if not files:
-            return "No backups yet."
-        latest = max(files, key=lambda p: p.stat().st_mtime)
+            jdir = self.backup_dir
+        snap, t2 = _latest_glob(jdir, "backup_*.json")
+        if snap:
+            json_parts.append(f"Snapshot {snap}")
+            if t2 is not None:
+                mtimes.append(t2)
+
+        if not json_parts:
+            try:
+                list(self.backup_dir.iterdir())
+            except OSError:
+                return {
+                    "json_backup": "Backups folder unavailable.",
+                    "db_backup": "Backups folder unavailable.",
+                    "timestamp": "",
+                    "has_json_backup": False,
+                    "has_db_backup": False,
+                }
+            json_backup = "No JSON backups yet."
+        else:
+            json_backup = " · ".join(json_parts)
+        has_json_backup = bool(json_parts)
+
         try:
-            mtime = datetime.fromtimestamp(latest.stat().st_mtime)
-            return f"Last backup: {mtime.strftime('%Y-%m-%d %H:%M')} · {latest.name}"
+            ddir = db_backups_dir()
         except OSError:
-            return f"Last backup: {latest.name}"
+            ddir = self.backup_dir
+        db_str, t3 = _latest_glob(ddir, "backup_*.db")
+        has_db_backup = bool(db_str)
+        if db_str:
+            db_backup = db_str
+            if t3 is not None:
+                mtimes.append(t3)
+        else:
+            db_backup = "No SQLite backup yet."
+
+        if mtimes:
+            ts = datetime.fromtimestamp(max(mtimes)).isoformat(sep=" ", timespec="seconds")
+        else:
+            ts = ""
+
+        # New canonical keys + backward-compatible aliases for existing UI logic.
+        return {
+            "latest_json_backup": json_backup,
+            "latest_db_backup": db_backup,
+            "timestamp": ts,
+            "json_backup": json_backup,
+            "db_backup": db_backup,
+            "has_json_backup": has_json_backup,
+            "has_db_backup": has_db_backup,
+        }
 
     def create_full_backup(self) -> str:
         """Create complete backup of all data to JSON."""
@@ -160,12 +236,37 @@ class BackupService:
         with open(backup_file, "w", encoding="utf-8") as f:
             json.dump(backup_data, f, indent=2, default=str)
 
+        json_v1_path = json_backups_dir() / f"backup_{timestamp}.json"
+        try:
+            backup_to_json(db, json_v1_path)
+        except Exception as exc:
+            get_logger().warning("Versioned JSON backup failed: %s", exc)
+
         sqlite_backup = db_backups_dir() / f"backup_{timestamp}.db"
         try:
             backup_database(db.db_path, sqlite_backup)
         except Exception as exc:
             get_logger().warning("SQLite file backup failed: %s", exc)
 
+        return str(backup_file)
+
+    def create_pre_update_json_backup(self) -> str:
+        """Full JSON snapshot as ``pre_update_backup_<timestamp>.json`` (same payload as :meth:`create_full_backup`)."""
+        backup_data = {
+            "timestamp": datetime.now().isoformat(),
+            "products": [dict(row) for row in db.fetchall("SELECT * FROM products")],
+            "suppliers": [dict(row) for row in db.fetchall("SELECT * FROM suppliers")],
+            "sales": [dict(row) for row in db.fetchall("SELECT * FROM sales")],
+            "sale_items": [dict(row) for row in db.fetchall("SELECT * FROM sale_items")],
+            "sale_returns": [dict(row) for row in db.fetchall("SELECT * FROM sale_returns")],
+            "sale_return_items": [dict(row) for row in db.fetchall("SELECT * FROM sale_return_items")],
+            "purchase_receipts": [dict(row) for row in db.fetchall("SELECT * FROM purchase_receipts")],
+            "purchases": [dict(row) for row in db.fetchall("SELECT * FROM purchases")],
+        }
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = self.backup_dir / f"pre_update_backup_{timestamp}.json"
+        with open(backup_file, "w", encoding="utf-8") as f:
+            json.dump(backup_data, f, indent=2, default=str)
         return str(backup_file)
 
     def create_csv_export(self, report_type: str) -> str:
@@ -240,18 +341,36 @@ class BackupService:
         return str(export_file)
 
     def auto_backup_daily(self) -> None:
-        """At most one automatic JSON backup per calendar day (avoids UI stall on every login)."""
+        """At most one automatic backup per calendar day (legacy JSON, versioned JSON, SQLite file).
+
+        Uses ``last_auto_backup.txt`` in the backups folder (YYYYMMDD) so we do not rely on
+        globbing existing files and we run at most once per day across launches.
+        """
         today = datetime.now().strftime("%Y%m%d")
-        if any(self.backup_dir.glob(f"backup_{today}_*.json")):
+        marker = self.backup_dir / _LAST_AUTO_BACKUP_FILENAME
+        try:
+            if marker.is_file() and marker.read_text(encoding="utf-8").strip() == today:
+                return
+        except OSError:
+            pass
+        try:
+            self.create_full_backup()
+        except Exception as exc:
+            get_logger().warning("Automatic backup failed: %s", exc)
             return
-        self.create_full_backup()
+        try:
+            marker.write_text(today + "\n", encoding="utf-8")
+        except OSError as exc:
+            get_logger().warning("Could not write last backup date file: %s", exc)
 
     def restore_from_backup(self, backup_file: str) -> bool:
         """Restore database from backup file."""
+        log = get_logger()
+        path = Path(backup_file)
+        log.info("Legacy JSON restore started: %s", path)
         if db.connection is None:
             db.connect()
         conn = db.connection
-        path = Path(backup_file)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 backup_data = json.load(f)
@@ -307,10 +426,11 @@ class BackupService:
 
             cur.execute("PRAGMA foreign_keys = ON")
             conn.commit()
+            log.info("Legacy JSON restore succeeded: %s", path)
             return True
         except Exception as e:
             conn.rollback()
-            print(f"Restore failed: {e}")
+            log.exception("Legacy JSON restore failed: %s", path)
             return False
 
 
@@ -329,3 +449,13 @@ def _reset_sqlite_sequence(cur, table: str) -> None:
     max_id = cur.fetchone()[0]
     cur.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,))
     cur.execute("INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)", (table, max_id))
+
+
+def run_manual_backup() -> str:
+    """Run SQLite file backup and JSON exports (full + versioned). Not attached to UI."""
+    try:
+        main_path = BackupService().create_full_backup()
+        return f"Success: backup completed. Main JSON: {main_path}"
+    except Exception as exc:
+        get_logger().warning("Manual backup failed: %s", exc)
+        return f"Failure: {exc}"

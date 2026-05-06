@@ -10,12 +10,12 @@ from PySide6.QtWidgets import (
     QFrame,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
 )
 
 from app.database.connection import db
+from app.services.dialog_service import DialogService
 from app.services.auth_service import AuthService
 from app.services.shop_context import delete_shop, list_shops, shop_combo_entries
 from app.ui_qt.icon_utils import set_button_icon, style_dialog_button_box
@@ -130,17 +130,17 @@ class ProfileDialogQt(QDialog):
 
     def _on_delete_shop(self) -> None:
         if not AuthService.is_owner(getattr(self._main, "current_user", None)):
-            QMessageBox.warning(self, "My profile", "Only an owner can delete a shop.")
+            DialogService.warning("My profile", "Only an owner can delete a shop.", parent=self)
             return
         if self._shop_combo is None:
             return
 
         shops = list_shops()
         if len(shops) < 2:
-            QMessageBox.warning(
-                self,
+            DialogService.warning(
                 "My profile",
                 "You cannot delete the only shop. Create another shop first (sign out → New shop…).",
+                parent=self,
             )
             return
 
@@ -150,37 +150,33 @@ class ProfileDialogQt(QDialog):
         shop_id = self._shop_ids[idx]
         shop_name = self._shop_combo.currentText()
 
-        q1 = QMessageBox.question(
-            self,
+        if not DialogService.question_yes_no(
             "Delete shop",
             f"Permanently delete “{shop_name}” and all of its data?\n\n"
             "This cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if q1 != QMessageBox.StandardButton.Yes:
+            parent=self,
+            default_yes=False,
+        ):
             return
 
-        q2 = QMessageBox.question(
-            self,
+        if not DialogService.question_yes_no(
             "Confirm deletion",
             f'Click Yes only if you are sure you want to erase “{shop_name}”.',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if q2 != QMessageBox.StandardButton.Yes:
+            parent=self,
+            default_yes=False,
+        ):
             return
 
         try:
             delete_shop(shop_id, db)
         except ValueError as e:
-            QMessageBox.warning(self, "My profile", str(e))
+            DialogService.warning("My profile", str(e), parent=self)
             return
         except OSError as e:
-            QMessageBox.warning(
-                self,
+            DialogService.warning(
                 "My profile",
                 f"Could not remove shop files (they may be in use):\n{e}",
+                parent=self,
             )
             return
 
@@ -188,15 +184,15 @@ class ProfileDialogQt(QDialog):
             self._main.refresh_shop_context_ui()
 
         self._reload_shop_list()
-        QMessageBox.information(
-            self,
+        DialogService.info(
             "My profile",
             "The shop was removed. You are now working in the remaining shop.",
+            parent=self,
         )
 
     def _save(self) -> None:
         if self._user_id is None:
-            QMessageBox.warning(self, "My profile", "Not signed in.")
+            DialogService.warning("My profile", "Not signed in.", parent=self)
             return
 
         cur = (self._cur.text() or "").replace("\r", "").replace("\n", "")
@@ -205,17 +201,17 @@ class ProfileDialogQt(QDialog):
         any_pw = bool(cur or new or conf)
         if any_pw:
             if not cur or not new or not conf:
-                QMessageBox.warning(
-                    self,
+                DialogService.warning(
                     "My profile",
                     "To change password, fill current, new, and confirm.",
+                    parent=self,
                 )
                 return
             if new != conf:
-                QMessageBox.warning(self, "My profile", "New password and confirmation do not match.")
+                DialogService.warning("My profile", "New password and confirmation do not match.", parent=self)
                 return
             if len(new.strip()) < 4:
-                QMessageBox.warning(self, "My profile", "New password must be at least 4 characters.")
+                DialogService.warning("My profile", "New password must be at least 4 characters.", parent=self)
                 return
 
         acting = getattr(self._main, "current_user", None)
@@ -226,7 +222,7 @@ class ProfileDialogQt(QDialog):
                 username=self._user.text(),
             )
         except ValueError as e:
-            QMessageBox.warning(self, "My profile", str(e))
+            DialogService.warning("My profile", str(e), parent=self)
             return
 
         self._main.current_user = snap
@@ -237,11 +233,11 @@ class ProfileDialogQt(QDialog):
             try:
                 self._auth.change_own_password(snap, cur, new)
             except ValueError as e:
-                QMessageBox.warning(self, "My profile", str(e))
+                DialogService.warning("My profile", str(e), parent=self)
                 return
             self._cur.clear()
             self._new.clear()
             self._conf.clear()
 
-        QMessageBox.information(self, "My profile", "Profile saved.")
+        DialogService.info("My profile", "Profile saved.", parent=self)
         self.accept()

@@ -3,7 +3,7 @@
 ; Or:  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\SmartStock.iss" /DINSTALL_CODE="YourSecret"
 
 #define MyAppName "SmartStock"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #ifndef INSTALL_CODE
 #define INSTALL_CODE "AlhamdulilA"
 #endif
@@ -33,7 +33,7 @@ DisableProgramGroupPage=yes
 LicenseFile=
 InfoBeforeFile=
 InfoAfterFile=
-VersionInfoVersion=1.0.0.0
+VersionInfoVersion=1.1.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
 VersionInfoProductName={#MyAppName}
